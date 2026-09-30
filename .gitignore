@@ -1,0 +1,12 @@
+# Build output and Visual Studio files — don't upload these to GitHub
+bin/
+obj/
+release/
+.vs/
+*.user
+*.suo
+
+# Leftovers that shouldn't be part of the app's repository
+Claude outputs/
+/FlashcardsApp/
+/flashcards/

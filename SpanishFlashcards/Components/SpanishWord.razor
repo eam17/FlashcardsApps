@@ -1,0 +1,16 @@
+@* The Spanish side of a card: article chip + word, coloured by gender for nouns. *@
+<div class="sw">
+    @if (Word.IsNoun)
+    {
+        <span class="art-chip @Word.GenderClass" title="@Word.GenderLabel">@Word.ArticleChip</span>
+    }
+    <span class="card-word @Word.GenderClass">@Word.Es</span>
+</div>
+@if (Word.IsNoun)
+{
+    <div class="gender-note @Word.GenderClass">@Word.GenderLabel noun</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Word Word { get; set; } = default!;
+}

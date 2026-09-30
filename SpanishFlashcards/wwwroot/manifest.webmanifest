@@ -1,0 +1,11 @@
+{
+  "name": "Palabras – Spanish flashcards",
+  "short_name": "Palabras",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F4F6FB",
+  "theme_color": "#2340B8",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,629 @@
+@page "/"
+@inject WordRepository Repo
+@inject ProgressStore Store
+@inject IJSRuntime JS
+
+<PageTitle>Palabras · Spanish flashcards</PageTitle>
+
+@if (words is null)
+{
+    <div class="loading">Cargando palabras…</div>
+}
+else
+{
+    var group = CurrentGroup;
+    var groupWords = words.Where(group.Includes).ToList();
+    var groupLearned = groupWords.Count(w => Srs.IsLearned(State(w)));
+    var groupDue = groupWords.Count(w => Srs.IsDue(State(w), today));
+
+    <div class="app">
+        <header class="top">
+            <div class="top-row">
+                <div>
+                    <div class="kicker">@(tab == Tab.Study ? "Palabras" : "Your words")</div>
+                    <h1>@ScreenTitle</h1>
+                </div>
+                <div class="score">
+                    <div class="score-num">@LearnedCount<span> / @words.Count</span></div>
+                    <div class="score-label">learned</div>
+                </div>
+            </div>
+            <div class="progress" role="progressbar" aria-label="Words learned"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Percent">
+                <div class="progress-fill" style="width: @(Percent)%"></div>
+            </div>
+        </header>
+
+        @* ---------- group picker: frequency groups and topics ---------- *@
+        <div class="group-picker" role="group" aria-label="Word group">
+            <button type="button" class="tool icon" aria-label="Previous group"
+                    disabled="@(GroupIndex <= 0)" @onclick="() => StepGroup(-1)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+            <select class="group-select" aria-label="Choose a word group" @bind="groupId" @bind:after="OnGroupChanged">
+                @foreach (var section in groups.GroupBy(g => g.Section))
+                {
+                    if (section.Key == "")
+                    {
+                        foreach (var g in section)
+                        {
+                            <option value="@g.Id">@g.Label</option>
+                        }
+                    }
+                    else
+                    {
+                        <optgroup label="@section.Key">
+                            @foreach (var g in section)
+                            {
+                                <option value="@g.Id">@g.Label</option>
+                            }
+                        </optgroup>
+                    }
+                }
+            </select>
+            <button type="button" class="tool icon" aria-label="Next group"
+                    disabled="@(GroupIndex >= groups.Count - 1)" @onclick="() => StepGroup(1)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
+        </div>
+        <div class="group-progress">@groupLearned of @groupWords.Count learned · @groupDue due for review</div>
+
+        <main class="content">
+            @if (tab == Tab.Study)
+            {
+                var queue = mode == Mode.Review ? ReviewQueue(groupWords) : PracticeQueue(groupWords);
+                var card = CurrentCard(queue);
+
+                <div class="study-bar">
+                    <div class="segmented" role="group" aria-label="Study mode">
+                        <button type="button" class="seg @(mode == Mode.Review ? "on" : "")" aria-pressed="@(mode == Mode.Review ? "true" : "false")" @onclick="() => SetMode(Mode.Review)">Review</button>
+                        <button type="button" class="seg @(mode == Mode.Practice ? "on" : "")" aria-pressed="@(mode == Mode.Practice ? "true" : "false")" @onclick="() => SetMode(Mode.Practice)">Practice</button>
+                    </div>
+                    <div class="study-tools">
+                        <button type="button" class="tool" @onclick="ToggleDirection"
+                                aria-label="@(progress.EnglishFirst ? "English shown first. Switch to Spanish first." : "Spanish shown first. Switch to English first.")">
+                            @(progress.EnglishFirst ? "EN → ES" : "ES → EN")
+                        </button>
+                        @if (mode == Mode.Practice)
+                        {
+                            <button type="button" class="tool icon" aria-label="Shuffle cards" @onclick="Shuffle">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5" /><path d="M4 20 21 3" /><path d="M21 16v5h-5" /><path d="m15 15 6 6" /><path d="M4 4l5 5" /></svg>
+                            </button>
+                        }
+                    </div>
+                </div>
+                <div class="queue-line">
+                    @if (mode == Mode.Review)
+                    {
+                        var dueN = queue.Count(w => Srs.IsDue(State(w), today));
+                        <span>@dueN due · @(queue.Count - dueN) new</span>
+                    }
+                    else
+                    {
+                        <span>Card @(queue.Count == 0 ? 0 : PracticeIndex(queue) + 1) of @queue.Count · only due cards move up a level</span>
+                    }
+                </div>
+
+                @if (card is not null)
+                {
+                    var state = State(card);
+                    var spanishVisible = flipped || !progress.EnglishFirst;
+                    var cloze = card.ClozeParts;
+
+                    <div class="study">
+                        <div class="card-wrap">
+                            <button type="button" class="card @(flipped ? "back" : "front")" @onclick="Flip"
+                                    aria-label="@CardAria(card)">
+                                <div class="card-meta">
+                                    <span>@card.Tag</span>
+                                    <span class="dots" title="@Srs.StageLabel(state)">
+                                        @for (var i = 1; i <= Srs.MaxLevel; i++)
+                                        {
+                                            <span class="dot @(state is not null && state.Box >= i ? "on" : "")"></span>
+                                        }
+                                    </span>
+                                </div>
+                                <div class="card-status">@CardStatus(state)</div>
+
+                                @if (!flipped && progress.EnglishFirst)
+                                {
+                                    @* English first: meaning + Spanish sentence with the word blanked *@
+                                    <div class="card-word en">@card.En</div>
+                                    <div class="card-pos">@card.Pos</div>
+                                    <div class="card-example">
+                                        @if (cloze is not null)
+                                        {
+                                            <text>@(cloze.Value.Before)<span class="blank">_____</span>@(cloze.Value.After)</text>
+                                        }
+                                        else
+                                        {
+                                            @card.Example
+                                        }
+                                    </div>
+                                    <div class="card-hint">Say the Spanish word, then tap to check</div>
+                                }
+                                else if (!flipped)
+                                {
+                                    @* Spanish first *@
+                                    <SpanishWord Word="card" />
+                                    <div class="card-example">@card.Example</div>
+                                    <div class="card-hint">Tap to see the meaning</div>
+                                }
+                                else
+                                {
+                                    @* Answer side (same for both directions) *@
+                                    <SpanishWord Word="card" />
+                                    <div class="card-answer">@card.En</div>
+                                    <div class="card-example">
+                                        @if (cloze is not null)
+                                        {
+                                            <text>@(cloze.Value.Before)<mark>@card.Form</mark>@(cloze.Value.After)</text>
+                                        }
+                                        else
+                                        {
+                                            @card.Example
+                                        }
+                                    </div>
+                                    <div class="card-sub">@card.ExampleEn</div>
+                                    @if (card.Conjugation is not null)
+                                    {
+                                        var cj = card.ConjugationParts;
+                                        <div class="conj">
+                                            <div><span class="conj-label">Present</span> @cj.Present</div>
+                                            @if (cj.Past is not null)
+                                            {
+                                                <div><span class="conj-label">Past</span> @cj.Past</div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </button>
+
+                            @if (canSpeak && spanishVisible)
+                            {
+                                <div class="speak">
+                                    <button type="button" class="speak-btn" aria-label="Say the word" title="Say the word"
+                                            @onclick="() => Speak(SpeakableWord(card))">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></svg>
+                                    </button>
+                                    <button type="button" class="speak-btn" aria-label="Say the example sentence" title="Say the sentence"
+                                            @onclick="() => Speak(card.Example)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="actions">
+                            <button type="button" class="act learning" @onclick="() => AnswerForgot(card)">Still learning</button>
+                            <button type="button" class="act skip" @onclick="() => Skip(card)">Skip</button>
+                            <button type="button" class="act known" @onclick="() => AnswerKnow(card)">I know it</button>
+                        </div>
+                        <p class="notice" role="status">@notice</p>
+                    </div>
+                }
+                else
+                {
+                    var nextDue = NextDueIn(groupWords);
+                    <div class="done">
+                        <div class="done-title">¡Muy bien!</div>
+                        <p>
+                            Nothing is due in this group right now.
+                            @if (nextDue is not null)
+                            {
+                                <span> Next review: @(nextDue.Value.ToString("dddd, MMM d")).</span>
+                            }
+                        </p>
+                        <button type="button" class="primary" @onclick="() => SetMode(Mode.Practice)">Practice anyway</button>
+                        <p class="small">Practice doesn't move cards toward Learned unless they're due.</p>
+                    </div>
+                }
+            }
+            else
+            {
+                var isLearnedTab = tab == Tab.Learned;
+                var items = groupWords.Where(w => Srs.IsLearned(State(w)) == isLearnedTab).ToList();
+
+                <div class="list-screen">
+                    <section class="backup" aria-label="Export and import">
+                        <div class="backup-row">
+                            <span class="backup-title">Your progress</span>
+                            <div class="backup-buttons">
+                                <button type="button" class="tool" @onclick="ExportJson">Export JSON</button>
+                                <button type="button" class="tool" @onclick="ExportCsv">Export CSV</button>
+                                <label class="tool file">
+                                    Import…
+                                    <InputFile OnChange="ImportFile" accept=".json,.csv,application/json,text/csv" />
+                                </label>
+                            </div>
+                        </div>
+                        @if (transferMessage is not null)
+                        {
+                            <p class="backup-msg @(transferError ? "error" : "")" role="status">@transferMessage</p>
+                        }
+                    </section>
+
+                    <p class="list-hint">
+                        @(isLearnedTab
+                            ? "A word counts as learned once you've remembered it on time up to level 4 (about two weeks of reviews). Tap Relearn to send it back."
+                            : "Words move up a level each time you remember them when they're due.")
+                    </p>
+
+                    @if (items.Count == 0)
+                    {
+                        <div class="empty">
+                            @(isLearnedTab
+                                ? "Nothing here yet. Keep reviewing — words land here after a few successful reviews."
+                                : "You've learned every word in this group. ¡Enhorabuena!")
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list">
+                            <Virtualize Items="items" Context="w" ItemSize="68">
+                                <div class="row">
+                                    <div class="row-text">
+                                        <div class="row-top">
+                                            @if (w.IsNoun)
+                                            {
+                                                <span class="art-chip small @w.GenderClass" title="@w.GenderLabel">@w.ArticleChip</span>
+                                            }
+                                            <span class="row-word @w.GenderClass">@w.Es</span>
+                                            <span class="badge @BadgeClass(State(w))">@Srs.StageLabel(State(w))</span>
+                                        </div>
+                                        <div class="row-sub">@w.En · @Srs.DueLabel(State(w), today)</div>
+                                    </div>
+                                    <button type="button" class="tool"
+                                            aria-label="@(isLearnedTab ? $"Move back to learn: {w.Es}" : $"Mark as learned: {w.Es}")"
+                                            @onclick="() => Move(w, isLearnedTab)">@(isLearnedTab ? "Relearn" : "Mark learned")</button>
+                                </div>
+                            </Virtualize>
+                        </div>
+                    }
+
+                    <button type="button" class="reset" @onclick="Reset">Reset all progress</button>
+                </div>
+            }
+        </main>
+
+        <nav class="tabbar" aria-label="Sections">
+            <button type="button" class="tab @(tab == Tab.Study ? "on" : "")" aria-pressed="@(tab == Tab.Study ? "true" : "false")" @onclick="() => SetTab(Tab.Study)">
+                <span class="tab-pill">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="14" height="14" rx="2" /><path d="M7 3h12a2 2 0 0 1 2 2v12" /></svg>
+                    <span class="tab-count" title="Due for review">@groupDue</span>
+                </span>
+                Flashcards
+            </button>
+            <button type="button" class="tab @(tab == Tab.ToLearn ? "on" : "")" aria-pressed="@(tab == Tab.ToLearn ? "true" : "false")" @onclick="() => SetTab(Tab.ToLearn)">
+                <span class="tab-pill">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><circle cx="4.5" cy="6" r="1" /><circle cx="4.5" cy="12" r="1" /><circle cx="4.5" cy="18" r="1" /></svg>
+                    <span class="tab-count">@(groupWords.Count - groupLearned)</span>
+                </span>
+                To learn
+            </button>
+            <button type="button" class="tab @(tab == Tab.Learned ? "on" : "")" aria-pressed="@(tab == Tab.Learned ? "true" : "false")" @onclick="() => SetTab(Tab.Learned)">
+                <span class="tab-pill">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></svg>
+                    <span class="tab-count">@groupLearned</span>
+                </span>
+                Learned
+            </button>
+        </nav>
+    </div>
+}
+
+@code {
+    private enum Tab { Study, ToLearn, Learned }
+    private enum Mode { Review, Practice }
+
+    private sealed record GroupDef(string Id, string Label, string Section, Func<Word, bool> Includes);
+
+    private IReadOnlyList<Word>? words;
+    private Dictionary<string, Word> byId = new();
+    private Progress progress = new();
+    private List<GroupDef> groups = new();
+
+    private DateOnly today = Srs.Today;
+    private Tab tab = Tab.Study;
+    private Mode mode = Mode.Review;
+    private string groupId = "freq:1";
+    private bool flipped;
+    private int practiceIdx;
+    private string? lastAnswered;
+    private readonly HashSet<string> skipped = new();
+    private string? notice;
+    private bool canSpeak;
+
+    private string? transferMessage;
+    private bool transferError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var all = await Repo.GetAllAsync();
+        byId = all.ToDictionary(w => w.Es);
+        groups = BuildGroups(all);
+        progress = await Store.LoadAsync();
+
+        // Drop saved data for words that are no longer in the list.
+        foreach (var key in progress.Cards.Keys.Where(k => !byId.ContainsKey(k)).ToList())
+            progress.Cards.Remove(key);
+        if (progress.Order is null || progress.Order.Count != all.Count || progress.Order.Any(id => !byId.ContainsKey(id)))
+            progress.Order = null;
+
+        if (progress.Group is { } g && groups.Any(x => x.Id == g)) groupId = g;
+        words = all;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { canSpeak = await JS.InvokeAsync<bool>("palabras.canSpeak"); }
+        catch (Exception) { canSpeak = false; }
+        if (canSpeak) StateHasChanged();
+    }
+
+    private static List<GroupDef> BuildGroups(IReadOnlyList<Word> all)
+    {
+        var list = new List<GroupDef> { new("all", $"All {all.Count:N0} words", "", _ => true) };
+        for (var start = 1; start <= all.Count; start += 100)
+        {
+            var band = Word.BandFor(start);
+            list.Add(new($"freq:{start}", $"Words {band}", "By frequency", w => w.Band == band));
+        }
+        foreach (var topic in all.Select(w => w.Topic).Distinct().OrderBy(t => t, StringComparer.CurrentCulture))
+        {
+            var count = all.Count(w => w.Topic == topic);
+            list.Add(new($"topic:{topic}", $"{topic} ({count})", "By topic", w => w.Topic == topic));
+        }
+        return list;
+    }
+
+    // ----- derived state -----
+
+    private GroupDef CurrentGroup => groups.FirstOrDefault(g => g.Id == groupId) ?? groups[0];
+
+    private int GroupIndex => groups.FindIndex(g => g.Id == groupId);
+
+    private CardState? State(Word w) => progress.Cards.TryGetValue(w.Es, out var s) ? s : null;
+
+    private int LearnedCount => progress.Cards.Values.Count(c => Srs.IsLearned(c));
+
+    private int Percent => words is { Count: > 0 } ? (int)Math.Round(LearnedCount * 100.0 / words.Count) : 0;
+
+    private string ScreenTitle => tab switch
+    {
+        Tab.Study => mode == Mode.Review ? "Review" : "Practice",
+        Tab.ToLearn => "To learn",
+        _ => "Learned",
+    };
+
+    /// <summary>Due cards first (oldest first), then new cards in frequency order. Skipped cards go last.</summary>
+    private List<Word> ReviewQueue(List<Word> groupWords)
+    {
+        var due = groupWords
+            .Where(w => Srs.IsDue(State(w), today))
+            .OrderBy(w => State(w)!.Due)
+            .ThenBy(w => State(w)!.LastSeen ?? DateTime.MinValue)
+            .ThenBy(w => w.Rank);
+        var fresh = groupWords.Where(w => Srs.IsNew(State(w))).OrderBy(w => w.Rank);
+        var all = due.Concat(fresh).ToList();
+        return all.Where(w => !skipped.Contains(w.Es)).Concat(all.Where(w => skipped.Contains(w.Es))).ToList();
+    }
+
+    /// <summary>Every card in the group, in shuffled (or frequency) order.</summary>
+    private List<Word> PracticeQueue(List<Word> groupWords)
+    {
+        if (progress.Order is null) return groupWords;
+        var pos = new Dictionary<string, int>();
+        for (var i = 0; i < progress.Order.Count; i++) pos[progress.Order[i]] = i;
+        return groupWords.OrderBy(w => pos.GetValueOrDefault(w.Es, int.MaxValue)).ToList();
+    }
+
+    private int PracticeIndex(List<Word> queue) =>
+        queue.Count == 0 ? 0 : ((practiceIdx % queue.Count) + queue.Count) % queue.Count;
+
+    private Word? CurrentCard(List<Word> queue)
+    {
+        if (queue.Count == 0) return null;
+        if (mode == Mode.Practice) return queue[PracticeIndex(queue)];
+        // Avoid showing the card you just answered twice in a row.
+        return queue.Count > 1 && queue[0].Es == lastAnswered ? queue[1] : queue[0];
+    }
+
+    private DateOnly? NextDueIn(List<Word> groupWords)
+    {
+        var dates = groupWords.Select(State).Where(s => s is { Box: > 0 }).Select(s => s!.Due).ToList();
+        return dates.Count == 0 ? null : dates.Min();
+    }
+
+    private string CardStatus(CardState? s)
+    {
+        if (Srs.IsNew(s)) return "New word";
+        if (Srs.IsDue(s, today)) return $"{Srs.StageLabel(s)} · due now";
+        return $"{Srs.StageLabel(s)} · practice only ({Srs.DueLabel(s, today)})";
+    }
+
+    private string CardAria(Word w)
+    {
+        if (flipped) return $"Answer: {w.SpanishWithArticle}, {w.En}. Tap to flip back.";
+        return progress.EnglishFirst
+            ? $"English: {w.En}. Tap to reveal the Spanish word."
+            : $"Spanish: {w.SpanishWithArticle}. Tap to reveal the meaning.";
+    }
+
+    private static string BadgeClass(CardState? s) =>
+        Srs.IsLearned(s) ? "known" : Srs.IsNew(s) ? "new" : "learning";
+
+    private static string SpeakableWord(Word w) =>
+        w.IsNoun ? $"{(w.Article == "el / la" ? "el" : w.Article)} {w.Es}" : w.Es.Replace(" / ", ", ");
+
+    // ----- actions -----
+
+    private void Flip() => flipped = !flipped;
+
+    private void SetTab(Tab t)
+    {
+        tab = t;
+        flipped = false;
+    }
+
+    private void SetMode(Mode m)
+    {
+        mode = m;
+        tab = Tab.Study;
+        flipped = false;
+        notice = null;
+        skipped.Clear();
+    }
+
+    private async Task OnGroupChanged()
+    {
+        practiceIdx = 0;
+        flipped = false;
+        notice = null;
+        skipped.Clear();
+        progress.Group = groupId;
+        await Store.SaveAsync(progress);
+    }
+
+    private async Task StepGroup(int step)
+    {
+        var i = Math.Clamp(GroupIndex + step, 0, groups.Count - 1);
+        groupId = groups[i].Id;
+        await OnGroupChanged();
+    }
+
+    private async Task ToggleDirection()
+    {
+        progress.EnglishFirst = !progress.EnglishFirst;
+        flipped = false;
+        await Store.SaveAsync(progress);
+    }
+
+    private void Skip(Word card)
+    {
+        if (mode == Mode.Practice) practiceIdx++;
+        else skipped.Add(card.Es);
+        lastAnswered = card.Es;
+        flipped = false;
+        notice = null;
+    }
+
+    private async Task AnswerKnow(Word card)
+    {
+        today = Srs.Today;
+        var before = State(card);
+        var next = Srs.Know(before, today);
+        if (next is null)
+        {
+            notice = $"Practice only: “{card.Es}” isn't due yet ({Srs.DueLabel(before, today)}), so its level stays the same.";
+        }
+        else
+        {
+            progress.Cards[card.Es] = next;
+            notice = Srs.IsLearned(next) && !Srs.IsLearned(before)
+                ? $"“{card.Es}” is now learned! Next review {Srs.DueLabel(next, today)}."
+                : $"Level {next.Box}. Next review {Srs.DueLabel(next, today)}.";
+        }
+        AfterAnswer(card);
+        await Store.SaveAsync(progress);
+    }
+
+    private async Task AnswerForgot(Word card)
+    {
+        today = Srs.Today;
+        progress.Cards[card.Es] = Srs.Forgot(today);
+        notice = $"“{card.Es}” is back to level 1 and will come up again today.";
+        AfterAnswer(card);
+        await Store.SaveAsync(progress);
+    }
+
+    private void AfterAnswer(Word card)
+    {
+        lastAnswered = card.Es;
+        skipped.Remove(card.Es);
+        flipped = false;
+        if (mode == Mode.Practice) practiceIdx++;
+    }
+
+    private async Task Move(Word w, bool fromLearned)
+    {
+        today = Srs.Today;
+        progress.Cards[w.Es] = fromLearned ? Srs.Forgot(today) : Srs.MarkLearned(today);
+        await Store.SaveAsync(progress);
+    }
+
+    private async Task Shuffle()
+    {
+        var ids = words!.Select(w => w.Es).ToArray();
+        Random.Shared.Shuffle(ids);
+        progress.Order = ids.ToList();
+        practiceIdx = 0;
+        flipped = false;
+        await Store.SaveAsync(progress);
+    }
+
+    private async Task Speak(string text)
+    {
+        try { await JS.InvokeAsync<bool>("palabras.speak", text, false); }
+        catch (Exception) { /* speech not available */ }
+    }
+
+    // ----- export / import -----
+
+    private async Task ExportJson()
+    {
+        var json = ProgressTransfer.ToJson(words!, progress.Cards);
+        await JS.InvokeVoidAsync("palabras.downloadText", $"palabras-progress-{DateTime.Now:yyyy-MM-dd}.json", "application/json", json);
+        ShowTransfer($"Exported {LearnedCount} learned and {words!.Count - LearnedCount} not-yet-learned words.");
+    }
+
+    private async Task ExportCsv()
+    {
+        var csv = ProgressTransfer.ToCsv(words!, progress.Cards);
+        await JS.InvokeVoidAsync("palabras.downloadText", $"palabras-progress-{DateTime.Now:yyyy-MM-dd}.csv", "text/csv;charset=utf-8", csv);
+        ShowTransfer($"Exported {LearnedCount} learned and {words!.Count - LearnedCount} not-yet-learned words.");
+    }
+
+    private async Task ImportFile(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 2_000_000);
+            using var reader = new StreamReader(stream);
+            var text = await reader.ReadToEndAsync();
+
+            var result = ProgressTransfer.Import(text, e.File.Name, words!);
+            progress.Cards = result.Cards;
+            practiceIdx = 0;
+            flipped = false;
+            skipped.Clear();
+            await Store.SaveAsync(progress);
+
+            var msg = $"Imported {result.Learned} learned and {result.Learning} still-learning words from {e.File.Name}.";
+            if (result.Unknown > 0) msg += $" {result.Unknown} words weren't in the app's list and were skipped.";
+            ShowTransfer(msg);
+        }
+        catch (Exception ex)
+        {
+            ShowTransfer($"Couldn't import {e.File.Name}: {ex.Message}", error: true);
+        }
+    }
+
+    private void ShowTransfer(string message, bool error = false)
+    {
+        transferMessage = message;
+        transferError = error;
+    }
+
+    private async Task Reset()
+    {
+        progress.Cards = new();
+        progress.Order = null;
+        practiceIdx = 0;
+        flipped = false;
+        skipped.Clear();
+        notice = null;
+        await Store.SaveAsync(progress);
+    }
+}
