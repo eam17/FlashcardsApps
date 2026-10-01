@@ -1,4 +1,4 @@
-@* Listen and tap: hear a Spanish word, pick its meaning from 4. Rounds of 10. *@
+@* Listen and tap: hear a Spanish word, pick its meaning from 6. Rounds of 10. *@
 
 @if (!CanSpeak)
 {
@@ -12,7 +12,7 @@ else if (phase == Phase.Ready)
 {
     <div class="race-intro">
         <div class="race-title">Listen and tap</div>
-        <p>You'll hear a Spanish word. Tap its meaning. <strong>10 words</strong> per round – no reading, just listening.
+        <p>You'll hear a Spanish word. Tap its meaning. <strong>10 words</strong> per round. No reading, just listening.
            Tap the speaker to hear it again.</p>
         <p class="small">Best score: @Best / @Rounds</p>
         <button type="button" class="primary" @onclick="Start">Start</button>
@@ -100,7 +100,7 @@ else
         answered = null;
         word = dealer!.Next();
         if (word is null) return;
-        options = GamePicker.Distractors(word, AllWords, 3).Append(word).OrderBy(_ => Random.Shared.Next()).ToList();
+        options = GamePicker.Distractors(word, AllWords, 5).Append(word).OrderBy(_ => Random.Shared.Next()).ToList();
         await SayIt();
     }
 

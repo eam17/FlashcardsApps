@@ -21,6 +21,12 @@ public sealed class Progress
     /// <summary>Most reviews you HAVE to do per day (0 = no limit). Anything beyond is optional extra.</summary>
     public int DailyReviewLimit { get; set; } = 30;
 
+    /// <summary>Answer time limit in seconds when answering in English (0 = no timer). Slower right answers don't move up.</summary>
+    public int EnglishAnswerSeconds { get; set; } = 4;
+
+    /// <summary>Answer time limit in seconds when answering in Spanish (0 = no timer).</summary>
+    public int SpanishAnswerSeconds { get; set; } = 6;
+
     /// <summary>Day the review counter below belongs to.</summary>
     public DateOnly? ReviewDay { get; set; }
 

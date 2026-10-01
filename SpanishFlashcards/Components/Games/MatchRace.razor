@@ -1,5 +1,5 @@
 @* Match race: tap a Spanish word and its English meaning. 60 seconds; each wrong pair costs 3 seconds.
-   Like Duolingo: a matched pair leaves an empty spot for a moment, then new words fill the same spots –
+   Like Duolingo: a matched pair leaves an empty spot for a moment, then new words fill the same spots;
    nothing else moves. One unmatched word waits on each side, so the two tiles that appear together
    never belong to each other (no free answers from position or timing). *@
 @implements IDisposable
@@ -33,10 +33,10 @@ else if (phase == Phase.Playing)
                 var rr = right[i];
                 <button type="button" class="race-tile es @TileClass(true, i, l is null)"
                         aria-pressed="@(selLeft == i ? "true" : "false")"
-                        disabled="@(l is null)" @onclick="() => TapLeft(i)">@(l?.Es)</button>
+                        disabled="@(l is null || leftLeaving[i])" @onclick="() => TapLeft(i)">@(l?.Es)</button>
                 <button type="button" class="race-tile en @TileClass(false, i, rr is null)"
                         aria-pressed="@(selRight == i ? "true" : "false")"
-                        disabled="@(rr is null)" @onclick="() => TapRight(i)">@(rr?.En)</button>
+                        disabled="@(rr is null || rightLeaving[i])" @onclick="() => TapRight(i)">@(rr?.En)</button>
             }
         </div>
     </div>
@@ -53,8 +53,11 @@ else
     private const int Rows = 5;
     private const double GameSeconds = 60;
     private const double PenaltySeconds = 3;
-    private static readonly TimeSpan LeftRefillDelay = TimeSpan.FromMilliseconds(900);
-    private static readonly TimeSpan RightRefillDelay = TimeSpan.FromMilliseconds(1300);
+    private static readonly TimeSpan LeftRefillDelay = TimeSpan.FromMilliseconds(1100);
+    private static readonly TimeSpan RightRefillDelay = TimeSpan.FromMilliseconds(1500);
+    // A matched pair turns green and fades out gently; new words fade in gently (see .leaving / .arrive in app.css).
+    private static readonly TimeSpan FadeOut = TimeSpan.FromMilliseconds(650);
+    private static readonly TimeSpan FadeIn = TimeSpan.FromMilliseconds(800);
 
     [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
     [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
@@ -73,6 +76,12 @@ else
     private readonly Word?[] rightPending = new Word?[Rows];
     private readonly DateTime[] leftRefillAt = new DateTime[Rows];
     private readonly DateTime[] rightRefillAt = new DateTime[Rows];
+    private readonly bool[] leftLeaving = new bool[Rows];
+    private readonly bool[] rightLeaving = new bool[Rows];
+    private readonly DateTime[] leftGoneAt = new DateTime[Rows];
+    private readonly DateTime[] rightGoneAt = new DateTime[Rows];
+    private readonly DateTime[] leftArriveUntil = new DateTime[Rows];
+    private readonly DateTime[] rightArriveUntil = new DateTime[Rows];
 
     // The one Spanish word whose English isn't out yet, and the one English whose Spanish isn't out yet.
     private Word? orphanLeft, orphanRight;
@@ -87,7 +96,9 @@ else
     private string TileClass(bool isLeft, int i, bool empty)
     {
         if (empty) return "empty";
+        if ((isLeft ? leftLeaving : rightLeaving)[i]) return "leaving";
         if ((isLeft ? badLeft : badRight) == i) return "bad";
+        if (DateTime.UtcNow < (isLeft ? leftArriveUntil : rightArriveUntil)[i]) return "arrive";
         return (isLeft ? selLeft : selRight) == i ? "sel" : "";
     }
 
@@ -98,6 +109,10 @@ else
         Array.Clear(right);
         Array.Clear(leftPending);
         Array.Clear(rightPending);
+        Array.Clear(leftLeaving);
+        Array.Clear(rightLeaving);
+        Array.Clear(leftArriveUntil);
+        Array.Clear(rightArriveUntil);
         mistakes.Clear();
         selLeft = selRight = badLeft = badRight = null;
         orphanLeft = orphanRight = null;
@@ -149,14 +164,14 @@ else
 
     private void TapLeft(int i)
     {
-        if (left[i] is null) return;
+        if (left[i] is null || leftLeaving[i]) return;
         selLeft = selLeft == i ? null : i;
         TryMatch();
     }
 
     private void TapRight(int i)
     {
-        if (right[i] is null) return;
+        if (right[i] is null || rightLeaving[i]) return;
         selRight = selRight == i ? null : i;
         TryMatch();
     }
@@ -171,8 +186,9 @@ else
         if (ReferenceEquals(es, en) || es.En == en.En)
         {
             score++;
-            left[a] = null;
-            right[b] = null;
+            var now = DateTime.UtcNow;
+            leftLeaving[a] = rightLeaving[b] = true;
+            leftGoneAt[a] = rightGoneAt[b] = now + FadeOut;
             badLeft = badRight = null;
             ScheduleRefill(a, b);
         }
@@ -188,7 +204,7 @@ else
 
     /// <summary>
     /// Fill the two empty spots after a short pause. Each time, one waiting word gets its partner
-    /// and one brand-new word starts waiting – alternating sides – so the two new tiles never match each other.
+    /// and one brand-new word starts waiting (alternating sides), so the two new tiles never match each other.
     /// </summary>
     private void ScheduleRefill(int a, int b)
     {
@@ -219,15 +235,27 @@ else
         var now = DateTime.UtcNow;
         for (var i = 0; i < Rows; i++)
         {
+            if (leftLeaving[i] && now >= leftGoneAt[i])
+            {
+                left[i] = null;
+                leftLeaving[i] = false;
+            }
+            if (rightLeaving[i] && now >= rightGoneAt[i])
+            {
+                right[i] = null;
+                rightLeaving[i] = false;
+            }
             if (left[i] is null && leftPending[i] is not null && now >= leftRefillAt[i])
             {
                 left[i] = leftPending[i];
                 leftPending[i] = null;
+                leftArriveUntil[i] = now + FadeIn;
             }
             if (right[i] is null && rightPending[i] is not null && now >= rightRefillAt[i])
             {
                 right[i] = rightPending[i];
                 rightPending[i] = null;
+                rightArriveUntil[i] = now + FadeIn;
             }
         }
         if (now > flashUntil) badLeft = badRight = null;

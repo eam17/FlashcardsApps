@@ -39,6 +39,24 @@ window.palabras = {
         return es[0] || null;
     },
 
+    // Answer timer for cards. Time while the app is hidden (another app, phone locked) doesn't count.
+    _timer: { start: 0, hiddenMs: 0, hiddenSince: null },
+
+    timerStart: function () {
+        const t = window.palabras._timer;
+        t.start = performance.now();
+        t.hiddenMs = 0;
+        t.hiddenSince = document.hidden ? performance.now() : null;
+    },
+
+    timerElapsed: function () {
+        const t = window.palabras._timer;
+        if (!t.start) return 0;
+        const now = performance.now();
+        const hidden = t.hiddenMs + (t.hiddenSince !== null ? now - t.hiddenSince : 0);
+        return Math.max(0, now - t.start - hidden);
+    },
+
     speak: function (text, slow) {
         if (!window.palabras.canSpeak() || !text) return false;
         const synth = window.speechSynthesis;
@@ -58,3 +76,14 @@ if ('speechSynthesis' in window) {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.onvoiceschanged = function () { window.speechSynthesis.getVoices(); };
 }
+
+// Pause the answer timer while the app is in the background.
+document.addEventListener('visibilitychange', function () {
+    const t = window.palabras._timer;
+    if (document.hidden) {
+        if (t.hiddenSince === null) t.hiddenSince = performance.now();
+    } else if (t.hiddenSince !== null) {
+        t.hiddenMs += performance.now() - t.hiddenSince;
+        t.hiddenSince = null;
+    }
+});

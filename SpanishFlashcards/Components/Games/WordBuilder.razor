@@ -4,7 +4,7 @@
 {
     <div class="race-intro">
         <div class="race-title">Word builder</div>
-        <p>You see the English meaning. Tap the scrambled letters in order to spell the Spanish word – accents count!
+        <p>You see the English meaning. Tap the scrambled letters in order to spell the Spanish word. Accents count!
            <strong>8 words</strong> per round: 3 points with no mistakes, 2 with one, 1 otherwise.</p>
         <p class="small">Best score: @Best / @(Rounds * 3)</p>
         <button type="button" class="primary" @onclick="Start">Start</button>
@@ -52,9 +52,10 @@ else if (phase == Phase.Playing && word is not null)
         }
         else
         {
-            <div class="game-feedback @(solved && wordMistakes == 0 ? "ok" : "no")">
-                <span>@(solved ? $"+{PointsFor(wordMistakes)} {(PointsFor(wordMistakes) == 1 ? "point" : "points")}" : "No points")</span>
-                <span>@word.Example</span>
+            <div class="game-feedback @(solved && wordMistakes == 0 ? "ok" : solved ? "meh" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(solved ? "✓" : "✗")</span>
+                <span class="fb-label">@(solved ? $"+{PointsFor(wordMistakes)} {(PointsFor(wordMistakes) == 1 ? "point" : "points")}" : "No points")</span>
+                <span class="fb-word">@word.Example</span>
             </div>
             <button type="button" class="primary wide" @onclick="Next">@(index + 1 == Rounds ? "See results" : "Next word")</button>
         }

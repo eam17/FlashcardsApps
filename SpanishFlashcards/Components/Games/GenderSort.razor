@@ -25,14 +25,17 @@ else if (phase == Phase.Playing && current is not null)
             <div class="game-sub">@current.En</div>
         </div>
 
-        <div class="game-feedback @(lastRight ? "ok" : "no")" aria-live="polite">
-            @if (last is not null)
-            {
-                <span class="art-chip small @last.GenderClass">@last.Article</span>
-                <span class="row-word @last.GenderClass">@last.Es</span>
-                <span>@(lastRight ? "✓" : "✗")</span>
-            }
-        </div>
+        @if (last is null)
+        {
+            <div class="game-feedback empty" aria-hidden="true"></div>
+        }
+        else
+        {
+            <div @key="answers" class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word"><strong>@last.Article</strong> @last.Es</span>
+            </div>
+        }
 
         <div class="big-choices">
             <button type="button" class="big-choice g-m" @onclick="@(() => Answer("el"))">el</button>
@@ -60,6 +63,7 @@ else
     private WordDealer? dealer;
     private Word? current, last;
     private bool lastRight;
+    private int answers;
     private int score, streak, previousBest;
     private readonly List<Word> mistakes = new();
 
@@ -95,6 +99,7 @@ else
             if (!mistakes.Contains(current)) mistakes.Add(current);
         }
         last = current;
+        answers++;
         current = dealer!.Next();
     }
 

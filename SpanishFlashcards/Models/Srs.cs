@@ -104,6 +104,18 @@ public static class Srs
         return best;
     }
 
+    /// <summary>
+    /// Right, but slow (over the answer time limit): the word doesn't move up and isn't counted as forgotten.
+    /// A new word starts at level 1 and comes back later today; a seen word keeps its level and comes back tomorrow.
+    /// Returns null when the card wasn't due (extra practice, nothing changes).
+    /// </summary>
+    public static CardState? Slow(CardState? s, DateOnly today)
+    {
+        if (!Counts(s, today)) return null;
+        if (IsNew(s)) return new CardState { Box = 1, Due = today, LastSeen = DateTime.Now };
+        return new CardState { Box = s!.Box, Due = today.AddDays(1), LastSeen = DateTime.Now, Lapses = s.Lapses };
+    }
+
     /// <summary>Apply "Still learning" to a card with no history: level 1, due today.</summary>
     public static CardState Forgot(DateOnly today) =>
         new() { Box = 1, Due = today, LastSeen = DateTime.Now };

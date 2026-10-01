@@ -203,8 +203,8 @@ h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 32px; 
 .conj-label { display: inline-block; min-width: 58px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
 
 /* gender: colour + article */
-.g-m { --g: #0E6E86; --g-soft: #D6F1F7; }
-.g-f { --g: #B0265F; --g-soft: #FBE1EC; }
+.g-m { --g: #1D4ED8; --g-soft: #DCE7FE; }
+.g-f { --g: #D0408F; --g-soft: #FCE7F3; }
 .g-mf { --g: #6B4FA0; --g-soft: #ECE6F7; }
 .card-word.g-m, .card-word.g-f, .card-word.g-mf, .row-word.g-m, .row-word.g-f, .row-word.g-mf { color: var(--g); }
 .art-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--g-soft); color: var(--g); font-family: var(--display); font-weight: 700; font-size: 22px; line-height: 1.3; }
@@ -443,3 +443,205 @@ button.choice:active { background: var(--accent-soft); }
 .spell-tile { width: 48px; height: 52px; border-radius: 12px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font-family: var(--display); font-weight: 800; font-size: 22px; }
 .spell-tile:disabled { opacity: .2; }
 .spell-tile.bad { border-color: #B42318; background: #FDE4E1; animation: shake .3s; }
+
+/* ===== compact layout (more room for the card) ===== */
+.top { padding: calc(10px + env(safe-area-inset-top)) 16px 8px; gap: 8px; }
+.top-row { align-items: center; }
+h1 { font-size: 24px; }
+.top .seg { min-height: 36px; padding: 4px 16px; }
+.score { flex-direction: row; align-items: baseline; gap: 2px; }
+.score-num { font-size: 20px; }
+.score-of { font-size: 13px; color: var(--muted); }
+.progress { height: 6px; }
+
+.group-picker { padding: 0 16px; gap: 6px; }
+.group-picker .tool.icon { width: 40px; height: 40px; }
+.group-select { min-height: 40px; padding: 6px 34px 6px 12px; font-size: 14px; }
+.group-progress { padding: 4px 16px 8px; }
+
+.status-row { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 4px 16px 6px; font-size: 13px; color: var(--muted); }
+.status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-tools { display: flex; gap: 6px; flex-shrink: 0; }
+.tool.small { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+.tool.icon.small { width: 32px; height: 32px; }
+
+.study { padding: 0 16px 10px; gap: 8px; }
+.card { padding: 14px 16px 18px; gap: 8px; border-radius: 24px; }
+.card-meta { top: 12px; left: 16px; }
+.card-status { margin-top: 14px; }
+.speak { top: 6px; right: 6px; }
+.speak-btn { width: 40px; height: 40px; }
+.act { min-height: 50px; }
+.choice { min-height: 48px; }
+.primary.wide { min-height: 48px; }
+.skip-link { min-height: 30px; padding: 2px 16px; }
+
+/* feedback message floats over the bottom of the card and fades away */
+.toast {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: rgba(21, 26, 46, .9);
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.35;
+    text-align: center;
+    pointer-events: none;
+    animation: toast-in .2s ease-out;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.tabbar { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding: 6px 4px calc(8px + env(safe-area-inset-bottom)); }
+.tab { min-height: 50px; font-size: 11px; gap: 2px; padding: 4px 2px; }
+.tab-pill { width: 48px; height: 28px; }
+
+/* ===== settings ===== */
+.settings { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 16px 20px; }
+.set-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
+.set-card h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 18px; }
+.set-card p { margin: 0; font-size: 14px; color: var(--muted); }
+.set-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink); }
+.set-card.danger { border-color: #F2C4BE; }
+.reset-btn { min-height: 44px; padding: 8px 16px; border-radius: 12px; border: 1.5px solid #B42318; background: #FDE4E1; color: #7A1A12; font-weight: 700; font-size: 14px; }
+
+/* ===== game feedback banner: unmistakable right / wrong ===== */
+.game-feedback {
+    min-height: 48px;
+    padding: 8px 12px;
+    border-radius: 14px;
+    border: 2px solid transparent;
+    gap: 8px;
+    font-size: 15px;
+    color: var(--ink);
+    animation: fb-pop .18s ease-out;
+}
+.game-feedback.empty { visibility: hidden; animation: none; }
+.game-feedback.ok { background: #DDF3E6; border-color: #1E7A46; color: #14532D; }
+.game-feedback.no { background: #FDE4E1; border-color: #B42318; color: #7A1A12; }
+.game-feedback.meh { background: #FFF6E0; border-color: #B8860B; color: #5C3B00; }
+.game-feedback.ok > span:first-child, .game-feedback.no > span:first-child { color: inherit; }
+.fb-icon {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    font-weight: 900;
+    color: #fff !important;
+}
+.game-feedback.ok .fb-icon { background: #1E7A46; }
+.game-feedback.no .fb-icon { background: #B42318; }
+.game-feedback.meh .fb-icon { background: #B8860B; }
+.fb-label { font-weight: 800; }
+.fb-word { overflow-wrap: anywhere; }
+@keyframes fb-pop { from { transform: scale(.96); opacity: .4; } to { transform: none; opacity: 1; } }
+
+/* ===== True or false: swipeable card ===== */
+.swipe-card {
+    position: relative;
+    border: 2px solid var(--line-strong);
+    border-radius: 18px;
+    background: var(--surface);
+    padding: 14px 12px;
+    touch-action: pan-y;          /* horizontal drags go to the game, vertical still scrolls */
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+    transition: transform .2s ease, border-color .15s, background .15s;
+}
+.swipe-card:active { cursor: grabbing; }
+.swipe-card.lean-true { border-color: #1E7A46; background: #EEF9F2; }
+.swipe-card.lean-false { border-color: #B42318; background: #FEF1EF; }
+.swipe-stamp {
+    position: absolute;
+    top: 8px;
+    padding: 2px 10px;
+    border: 2px solid currentColor;
+    border-radius: 8px;
+    font-weight: 900;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    opacity: 0;
+    transition: opacity .1s;
+    pointer-events: none;
+}
+.swipe-stamp.true { left: 10px; color: #1E7A46; transform: rotate(-8deg); }
+.swipe-stamp.false { right: 10px; color: #B42318; transform: rotate(8deg); }
+.swipe-card.lean-true .swipe-stamp.true, .swipe-card.lean-false .swipe-stamp.false { opacity: 1; }
+.swipe-hint { text-align: center; font-size: 12px; color: var(--muted); margin-top: -2px; }
+
+/* ===== Match race: calm fade out / fade in ===== */
+.race-tile { transition: background-color .3s ease, border-color .3s ease, opacity .5s ease; }
+.race-tile.leaving {
+    border-color: #1E7A46;
+    background: #DDF3E6;
+    color: #14532D;
+    opacity: 1;
+    animation: tile-out .65s ease-in forwards;
+}
+.race-tile.leaving:disabled { opacity: 1; }
+.race-tile.arrive { animation: tile-in .8s ease-out both; }
+.race-tile.empty { animation: tile-empty .5s ease-out both; }
+@keyframes tile-out {
+    0%, 35% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(.97); }
+}
+@keyframes tile-in {
+    from { opacity: 0; transform: scale(.97); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes tile-empty { from { opacity: 0; } to { opacity: .5; } }
+
+/* Extra practice (after Keep going): make it obvious these cards don't count */
+.status-row.extra .status-text { color: #6B4FA0; font-weight: 700; }
+
+/* Multiple choice: what happens to the card, shown right after you pick */
+.choice-outcome { margin: 2px 0 0; padding: 8px 12px; border-radius: 12px; font-size: 14px; font-weight: 600; text-align: center; }
+.choice-outcome.ok { background: #DDF3E6; color: #14532D; }
+.choice-outcome.no { background: #FDE4E1; color: #7A1A12; }
+
+/* Level / next-review messages: a quiet side note, not a banner */
+.choice-outcome, .choice-outcome.ok, .choice-outcome.no {
+    margin: 0;
+    padding: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+}
+.toast {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    bottom: 8px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .85);
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+    max-width: calc(100% - 24px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: toast-fade .3s ease-out;
+}
+@keyframes toast-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* 6 options (3 rows): keep them compact so the card keeps its room */
+.choices .choice { min-height: 44px; padding: 6px 8px; }
+
+/* Slow answer (over 4 s / 6 s): just a small clock, no text */
+.toast.slow { padding: 4px 8px; color: #8A5A00; background: rgba(255, 246, 224, .95); display: flex; align-items: center; }
+.slow-mark { display: inline-flex; vertical-align: -2px; margin-left: 6px; color: #8A5A00; }
+
+/* Settings: answer timer */
+.timer-settings { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; }
+.timer-settings label { font-size: 14px; font-weight: 600; }
