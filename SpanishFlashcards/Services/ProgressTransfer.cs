@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using SpanishFlashcards.Models;
+using SpanishFlashcards.Models.Verbs;
 
 namespace SpanishFlashcards.Services;
 
@@ -10,7 +11,7 @@ namespace SpanishFlashcards.Services;
 public sealed class ProgressExport
 {
     public string App { get; set; } = "Palabras";
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public DateTimeOffset ExportedAt { get; set; } = DateTimeOffset.Now;
 
     // Easy-to-read lists
@@ -20,6 +21,30 @@ public sealed class ProgressExport
 
     /// <summary>Full schedule (level + next review date) so an import restores exactly.</summary>
     public Dictionary<string, ExportCard>? Schedule { get; set; }
+
+    /// <summary>Verbs tab: every practised form ("verb|tense|person"), with strength, due date and mistakes.</summary>
+    public Dictionary<string, ExportVerbSkill>? Verbs { get; set; }
+
+    /// <summary>Verbs tab: latest test result per tree item (score 0 to 100, passed = 90 or more).</summary>
+    public Dictionary<string, ExportVerbTest>? VerbTests { get; set; }
+}
+
+public sealed class ExportVerbTest
+{
+    public DateTime Date { get; set; }
+    public int Score { get; set; }
+    public bool Passed { get; set; }
+}
+
+public sealed class ExportVerbSkill
+{
+    /// <summary>0 (new) to 1 (solid).</summary>
+    public double Strength { get; set; }
+    public DateTime Due { get; set; }
+    public int Mistakes { get; set; }
+    public int AccentSlips { get; set; }
+    public int Reps { get; set; }
+    public DateTime? Last { get; set; }
 }
 
 public sealed class ExportCard
@@ -34,7 +59,10 @@ public sealed class ExportCard
     public int Lapses { get; set; }
 }
 
-public sealed record ImportResult(Dictionary<string, CardState> Cards, int Learned, int Learning, int Unknown);
+/// <summary><paramref name="VerbSkills"/> is null when the file has no verb progress (older exports, CSV).</summary>
+public sealed record ImportResult(Dictionary<string, CardState> Cards, int Learned, int Learning, int Unknown,
+                                  Dictionary<string, VerbSkill>? VerbSkills = null,
+                                  Dictionary<string, VerbTestRecord>? VerbTests = null);
 
 /// <summary>Turns progress into JSON / CSV files and back.</summary>
 public static class ProgressTransfer
@@ -48,9 +76,32 @@ public static class ProgressTransfer
 
     // ---------- export ----------
 
-    public static string ToJson(IEnumerable<Word> words, IReadOnlyDictionary<string, CardState> cards)
+    public static string ToJson(IEnumerable<Word> words, IReadOnlyDictionary<string, CardState> cards,
+                                IReadOnlyDictionary<string, VerbSkill>? verbSkills = null,
+                                IReadOnlyDictionary<string, VerbTestRecord>? verbTests = null)
     {
         var export = new ProgressExport { Schedule = new() };
+        if (verbTests is { Count: > 0 })
+        {
+            export.VerbTests = verbTests
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .ToDictionary(kv => kv.Key, kv => new ExportVerbTest { Date = kv.Value.Date, Score = kv.Value.Score, Passed = kv.Value.Passed });
+        }
+        if (verbSkills is not null)
+        {
+            export.Verbs = verbSkills
+                .Where(kv => VerbSrs.IsSeen(kv.Value))
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .ToDictionary(kv => kv.Key, kv => new ExportVerbSkill
+                {
+                    Strength = Math.Round(kv.Value.Strength, 3),
+                    Due = kv.Value.Due,
+                    Mistakes = kv.Value.Mistakes,
+                    AccentSlips = kv.Value.AccentSlips,
+                    Reps = kv.Value.Reps,
+                    Last = kv.Value.Last,
+                });
+        }
         foreach (var w in words)
         {
             cards.TryGetValue(w.Es, out var s);
@@ -108,7 +159,9 @@ public static class ProgressTransfer
 
         var today = Srs.Today;
         var looksJson = text.StartsWith('{') || fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
-        var entries = looksJson ? ReadJson(text, today) : ReadCsv(text, today);
+        Dictionary<string, VerbSkill>? verbSkills = null;
+        Dictionary<string, VerbTestRecord>? verbTests = null;
+        var entries = looksJson ? ReadJson(text, today, out verbSkills, out verbTests) : ReadCsv(text, today);
 
         var cards = new Dictionary<string, CardState>();
         var unknown = 0;
@@ -123,13 +176,33 @@ public static class ProgressTransfer
             cards,
             cards.Values.Count(Srs.IsLearned),
             cards.Values.Count(c => !Srs.IsLearned(c) && !Srs.IsNew(c)),
-            unknown);
+            unknown,
+            verbSkills,
+            verbTests);
     }
 
-    private static List<(string Word, CardState? State)> ReadJson(string text, DateOnly today)
+    private static List<(string Word, CardState? State)> ReadJson(string text, DateOnly today,
+                                                                  out Dictionary<string, VerbSkill>? verbSkills,
+                                                                  out Dictionary<string, VerbTestRecord>? verbTests)
     {
         var data = JsonSerializer.Deserialize<ProgressExport>(text, JsonOptions)
                    ?? throw new FormatException("That JSON file isn't a Palabras export.");
+
+        verbSkills = data.Verbs?.ToDictionary(kv => kv.Key, kv => new VerbSkill
+        {
+            Strength = Math.Clamp(kv.Value.Strength, 0, 1),
+            Due = kv.Value.Due.Kind == DateTimeKind.Local ? kv.Value.Due.ToUniversalTime() : kv.Value.Due,
+            Mistakes = Math.Max(0, kv.Value.Mistakes),
+            AccentSlips = Math.Max(0, kv.Value.AccentSlips),
+            Reps = Math.Max(1, kv.Value.Reps),
+            Last = kv.Value.Last,
+        });
+        verbTests = data.VerbTests?.ToDictionary(kv => kv.Key, kv => new VerbTestRecord
+        {
+            Date = kv.Value.Date.Kind == DateTimeKind.Local ? kv.Value.Date.ToUniversalTime() : kv.Value.Date,
+            Score = Math.Clamp(kv.Value.Score, 0, 100),
+            Passed = kv.Value.Passed,
+        });
 
         var result = new List<(string, CardState?)>();
         if (data.Schedule is { Count: > 0 })
@@ -141,7 +214,7 @@ public static class ProgressTransfer
             return result;
         }
 
-        if (data.Learned.Count == 0 && data.StillLearning.Count == 0 && data.NotStarted.Count == 0)
+        if (data.Learned.Count == 0 && data.StillLearning.Count == 0 && data.NotStarted.Count == 0 && verbSkills is null)
             throw new FormatException("That JSON file has no \"learned\", \"stillLearning\" or \"notStarted\" lists.");
 
         foreach (var w in data.Learned) result.Add((w, Srs.MarkLearned(today)));

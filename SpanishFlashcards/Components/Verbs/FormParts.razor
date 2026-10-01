@@ -1,0 +1,27 @@
+@* A conjugated form drawn in colour: stem, ending, changed letters, pronoun, haber. *@
+
+<span class="pt" lang="es">
+    @foreach (var part in Parts())
+    {
+        <span class="@VerbParts.Css(part.Kind)">@part.Text</span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public Verb Verb { get; set; } = default!;
+    [Parameter, EditorRequired] public string Tense { get; set; } = "";
+    [Parameter, EditorRequired] public int Person { get; set; }
+    [Parameter, EditorRequired] public string Form { get; set; } = "";
+
+    /// <summary>The form starts a sentence ("Salió"): split it in lower case, then put the capital back.</summary>
+    [Parameter] public bool Capitalize { get; set; }
+
+    private List<FormPart> Parts()
+    {
+        if (!Capitalize || Form.Length == 0) return VerbParts.Split(Verb, Tense, Person, Form);
+        var parts = VerbParts.Split(Verb, Tense, Person, char.ToLowerInvariant(Form[0]) + Form[1..]);
+        if (parts.Count > 0 && parts[0].Text.Length > 0)
+            parts[0] = parts[0] with { Text = char.ToUpperInvariant(parts[0].Text[0]) + parts[0].Text[1..] };
+        return parts;
+    }
+}

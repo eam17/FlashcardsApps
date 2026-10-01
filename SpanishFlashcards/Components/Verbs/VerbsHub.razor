@@ -1,0 +1,366 @@
+@* The Verbs tab: tense → type → group → verb. Every item has Overview, Rules and Practice, and a progress bar. *@
+@inject VerbRepository VerbRepo
+
+@if (book is null || tree is null)
+{
+    <div class="list-screen"><div class="empty">@(loadError ?? "Loading verbs…")</div></div>
+}
+else
+{
+    var now = DateTime.UtcNow;
+    var node = Current;
+    var stats = VerbTree.Stats(node, Progress.VerbSkills, now);
+    var round = RoundFor(node);
+    var resume = ResumeRound;
+    var mastered = VerbTests.IsMastered(node, Progress.VerbSkills, Progress.VerbTests);
+
+    <div class="verbs">
+        @if (resume is not null && !(view == (resume.IsTest ? View.Test : View.Practice) && resume.Node == node))
+        {
+            <div class="vb-resume" role="status">
+                <span class="vb-resume-text">
+                    <span class="vb-resume-label">@(resume.IsTest ? "Test in progress" : "Practice in progress")</span>
+                    <span>@($"{resume.Node.Title} · {resume.PositionText}")</span>
+                </span>
+                <button type="button" class="primary vb-resume-btn" @onclick="() => Resume(resume)">Resume</button>
+            </div>
+        }
+        <div class="segmented vb-mode" role="tablist" aria-label="Show verbs as">
+            <button type="button" role="tab" class="seg @(mode == Mode.Tree ? "on" : "")" aria-selected="@(mode == Mode.Tree ? "true" : "false")" @onclick="() => mode = Mode.Tree">Tree</button>
+            <button type="button" role="tab" class="seg @(mode == Mode.Grid ? "on" : "")" aria-selected="@(mode == Mode.Grid ? "true" : "false")" @onclick="() => mode = Mode.Grid">Grid</button>
+            <button type="button" role="tab" class="seg @(mode == Mode.Decode ? "on" : "")" aria-selected="@(mode == Mode.Decode ? "true" : "false")" @onclick="() => mode = Mode.Decode">Decode</button>
+        </div>
+
+        @if (mode == Mode.Decode)
+        {
+            <DecodeView Book="book" Progress="Progress" OnSaved="Saved" CanSpeak="CanSpeak" Speak="Speak" />
+        }
+        else if (mode == Mode.Grid)
+        {
+            <GridView Tree="tree" Book="book" Progress="Progress" OnOpen="OpenFromGrid" OnPractise="PractiseFromGrid" />
+        }
+        else
+        {
+        <div class="vb-head">
+            @if (node.Parent is not null)
+            {
+                <nav class="vb-crumbs" aria-label="Where you are">
+                    <button type="button" class="tool back-btn" @onclick="() => Go(node.Parent)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                        @node.Parent.Title
+                    </button>
+                    @if (node.Ancestors().Count() > 1)
+                    {
+                        <span class="vb-trail">@(string.Join(" › ", node.Ancestors().Reverse().Skip(1).Select(a => a.Title)))</span>
+                    }
+                </nav>
+            }
+            <div class="vb-title-row">
+                <h2 class="vb-title" lang="@(node.Kind == NodeKind.Verb ? "es" : "en")">
+                    @node.Title
+                    @if (mastered)
+                    {
+                        <span class="badge mastered">Mastered</span>
+                    }
+                </h2>
+                <span class="vb-pct">@stats.Percent%</span>
+            </div>
+            @if (!string.IsNullOrEmpty(node.Subtitle))
+            {
+                <div class="vb-sub">@node.Subtitle</div>
+            }
+            <div class="progress vb-bar" role="progressbar" aria-label="@($"{node.Title}: strength")"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="@stats.Percent">
+                <div class="progress-fill" style="width: @(stats.Percent)%"></div>
+            </div>
+            <div class="vb-counts">
+                @($"{stats.Started} of {stats.Total} forms practised · {stats.Strong} strong · {stats.Due} due now")
+            </div>
+
+            <div class="segmented vb-views" role="tablist" aria-label="View">
+                <button type="button" role="tab" class="seg @(view == View.Overview ? "on" : "")" aria-selected="@(view == View.Overview ? "true" : "false")" @onclick="() => SetView(View.Overview)">Overview</button>
+                <button type="button" role="tab" class="seg @(view == View.Rules ? "on" : "")" aria-selected="@(view == View.Rules ? "true" : "false")" @onclick="() => SetView(View.Rules)">Rules</button>
+                <button type="button" role="tab" class="seg @(view == View.Practice ? "on" : "")" aria-selected="@(view == View.Practice ? "true" : "false")" @onclick="OpenPractice">@(round?.InProgress == true ? $"Practice {round.PositionText.Replace(" of ", "/")}" : "Practice")</button>
+                @if (VerbTests.CanTest(node))
+                {
+                    var test = TestFor(node);
+                    @if (node.Kind == NodeKind.Tense && book.StoryFor(node.Tense!) is not null)
+                    {
+                        <button type="button" role="tab" class="seg @(view == View.Story ? "on" : "")" aria-selected="@(view == View.Story ? "true" : "false")" @onclick="() => SetView(View.Story)">Story</button>
+                    }
+                    <button type="button" role="tab" class="seg @(view == View.Test ? "on" : "")" aria-selected="@(view == View.Test ? "true" : "false")" @onclick="() => SetView(View.Test)">@(test?.InProgress == true ? $"Test {test.PositionText.Replace(" of ", "/")}" : "Test")</button>
+                }
+            </div>
+        </div>
+
+        <div class="vb-body">
+            @if (view == View.Rules)
+            {
+                <VerbRulesView @key="node.Id" Page="RulesFor(node)" Book="book" />
+            }
+            else if (view == View.Story && node.Tense is not null && book.StoryFor(node.Tense) is { } story)
+            {
+                <StoryView @key="node.Id" Story="story" Book="book" Tree="tree" CanSpeak="CanSpeak" Speak="Speak" OnOpen="Go" />
+            }
+            else if (view == View.Test)
+            {
+                <VerbTest @key="node.Id" Node="node" Book="book" Progress="Progress" Round="TestFor(node)"
+                          OnStart="StartTest" OnSaved="Saved" OnClose="() => SetView(View.Overview)" OnPractise="PractiseNode" />
+            }
+            else if (view == View.Practice)
+            {
+                @if (round is not null)
+                {
+                    <VerbPractice @key="round" R="round" OnSaved="Saved"
+                                  OnClose="() => SetView(View.Overview)" CanSpeak="CanSpeak" Speak="Speak" />
+                }
+            }
+            else
+            {
+                @if (node.Kind == NodeKind.Root)
+                {
+                    <p class="list-hint">Conjugation, tense by tense. Each tense is split into regular verbs and the groups that change in the same way. Open Rules on anything for a plain-English explanation.</p>
+                }
+
+                @if (node.Kind is NodeKind.Root or NodeKind.Tense or NodeKind.Type)
+                {
+                    var weak = VerbTests.WeakSpots(node, Progress.VerbSkills, Progress.VerbTests);
+                    @if (weak.Count > 0)
+                    {
+                        <section class="vb-weak @(weakOpen ? "open" : "")" aria-label="Weak spots">
+                            <button type="button" class="vb-weak-head" aria-expanded="@(weakOpen ? "true" : "false")" @onclick="() => weakOpen = !weakOpen">
+                                <span class="vb-weak-heading">@($"Weak spots ({weak.Count})")</span>
+                                <span class="vb-weak-chevron" aria-hidden="true"></span>
+                            </button>
+                            @if (weakOpen)
+                            {
+                            @foreach (var w in weak)
+                            {
+                                var wn = w.Node;
+                                <div class="vb-weak-row">
+                                    <button type="button" class="vb-weak-text" @onclick="() => Go(wn)">
+                                        <span class="vb-weak-title">@wn.Title</span>
+                                        @if (w.Path.Length > 0)
+                                        {
+                                            <span class="vb-weak-path">@w.Path</span>
+                                        }
+                                        <span class="vb-weak-reason">@w.Reason</span>
+                                    </button>
+                                    <button type="button" class="tool small" @onclick="() => PractiseNode(wn)">Practise</button>
+                                </div>
+                            }
+                            }
+                        </section>
+                    }
+                }
+
+                @if (node.Children.Count > 0)
+                {
+                    <div class="list vb-list">
+                        @foreach (var child in node.Children)
+                        {
+                            var c = child;
+                            var cs = VerbTree.Stats(c, Progress.VerbSkills, now);
+                            <button type="button" class="row vb-row" @onclick="() => Go(c)">
+                                <span class="row-text">
+                                    <span class="row-top">
+                                        <span class="row-word" lang="@(c.Kind == NodeKind.Verb ? "es" : "en")">@c.Title</span>
+                                        @if (VerbTests.IsMastered(c, Progress.VerbSkills, Progress.VerbTests))
+                                        {
+                                            <span class="badge mastered">Mastered</span>
+                                        }
+                                        @if (cs.Due > 0)
+                                        {
+                                            <span class="badge learning">@cs.Due due</span>
+                                        }
+                                    </span>
+                                    @if (!string.IsNullOrEmpty(c.Subtitle))
+                                    {
+                                        <span class="row-sub" lang="@(c.Kind == NodeKind.Type || c.Kind == NodeKind.Tense ? "en" : "es")">@c.Subtitle</span>
+                                    }
+                                    <span class="vb-mini" aria-hidden="true"><span style="width: @(cs.Percent)%"></span></span>
+                                </span>
+                                <span class="vb-row-pct">@cs.Percent%</span>
+                            </button>
+                        }
+                    </div>
+                }
+                else if (node.Kind == NodeKind.Verb && node.Verb is not null)
+                {
+                    <ConjugationTable Verb="node.Verb" Tense="@(node.Tense!)" Highlight="@(node.Forms.Select(f => f.Person).ToHashSet())" />
+                    <p class="list-hint">Highlighted forms are practised and tracked here.</p>
+                }
+                else if (node.Pattern is not null && node.Members.Count > 0)
+                {
+                    <EndingsTable Tense="@(node.Tense!)" Sample="node.Members[0]" />
+                    <p class="list-hint">@($"You practise these endings with a different regular verb each time: {string.Join(", ", node.Members.Take(8).Select(v => v.Inf))}{(node.Members.Count > 8 ? $" and {node.Members.Count - 8} more" : "")}.")</p>
+                }
+
+                var byPerson = VerbTree.MistakesByPerson(node, Progress.VerbSkills);
+                @if (byPerson.Any(x => x.Mistakes > 0))
+                {
+                    var max = byPerson.Max(x => x.Mistakes);
+                    <section class="vb-persons" aria-label="Mistakes by person">
+                        <h3>Mistakes by person</h3>
+                        @foreach (var (label, m) in byPerson)
+                        {
+                            <div class="vb-person">
+                                <span class="vb-person-label">@label</span>
+                                <span class="vb-person-bar"><span style="width: @(max > 0 ? (int)Math.Round(m * 100 / max) : 0)%"></span></span>
+                                <span class="vb-person-n">@(m % 1 == 0 ? m.ToString("0") : m.ToString("0.0"))</span>
+                            </div>
+                        }
+                        <p class="small">A missing accent counts as half a mistake.</p>
+                    </section>
+                }
+
+                <button type="button" class="primary wide vb-practise" @onclick="OpenPractice">
+                    @(round?.InProgress == true ? $"Continue practice ({round.PositionText})"
+                      : stats.Due > 0 ? $"Practise ({stats.Due} due)" : "Practise")
+                </button>
+                @if (VerbTests.CanTest(node))
+                {
+                    <button type="button" class="tool vb-test-btn" @onclick="() => SetView(View.Test)">
+                        @(TestFor(node)?.InProgress == true ? "Continue the test" : "Test yourself")
+                    </button>
+                }
+            }
+        </div>
+        }
+    </div>
+}
+
+@code {
+    private enum View { Overview, Rules, Practice, Test, Story }
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public EventCallback OnProgressChanged { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    // Where you were in the tree, kept while the app is open (switching tabs doesn't lose your place).
+    private static string? lastNodeId;
+    private static View lastView = View.Overview;
+
+    private VerbBook? book;
+    private VerbNode? tree;
+    private VerbNode? current;
+    private View view = View.Overview;
+    private string? loadError;
+
+    private VerbNode Current => current ?? tree!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            (book, tree) = await VerbRepo.GetAsync();
+            current = lastNodeId is null ? tree : VerbTree.Find(tree, lastNodeId) ?? tree;
+            view = lastView;
+            if (view == View.Practice && RoundFor(Current) is null) view = View.Overview;
+            if (view == View.Test && !VerbTests.CanTest(Current)) view = View.Overview;
+            if (view == View.Story && (Current.Kind != NodeKind.Tense || book.StoryFor(Current.Tense!) is null)) view = View.Overview;
+        }
+        catch (Exception ex)
+        {
+            loadError = $"Couldn't load the verbs: {ex.Message}";
+        }
+    }
+
+    private void Go(VerbNode? node)
+    {
+        if (node is null) return;
+        current = node;
+        lastNodeId = node.Id;
+        SetView(View.Overview);
+    }
+
+    private void SetView(View v)
+    {
+        view = v;
+        lastView = v;
+    }
+
+    private Task Saved() => OnProgressChanged.InvokeAsync();
+
+    // Practice rounds, one per item, kept while the app is open: switching to Rules or Overview, opening
+    // another item or another app tab doesn't lose your place (or a half-spelled answer).
+    private static readonly Dictionary<string, PracticeRound> rounds = new();
+
+    private static PracticeRound? RoundFor(VerbNode node) => rounds.GetValueOrDefault(node.Id);
+
+    // Tests, one per item: the one in progress, or the last one taken (its results stay on screen).
+    private static readonly Dictionary<string, TestRound> tests = new();
+
+    private static TestRound? TestFor(VerbNode node) => tests.GetValueOrDefault(node.Id);
+
+    /// <summary>The most recently used unfinished round or test, for the Resume bar.</summary>
+    private static IVerbRound? ResumeRound =>
+        rounds.Values.Cast<IVerbRound>().Concat(tests.Values)
+            .Where(r => r.InProgress).OrderByDescending(r => r.LastActive).FirstOrDefault();
+
+    private void StartTest()
+    {
+        tests[Current.Id] = new TestRound(Current, book!, Progress);
+        SetView(View.Test);
+    }
+
+    /// <summary>Open an item and start practising it (from Weak spots or test results).</summary>
+    private void PractiseNode(VerbNode node)
+    {
+        current = node;
+        lastNodeId = node.Id;
+        OpenPractice();
+    }
+
+    /// <summary>Practice on this item: carry on with its unfinished round, or start a new one.</summary>
+    private void OpenPractice()
+    {
+        var node = Current;
+        if (RoundFor(node) is not { InProgress: true })
+            rounds[node.Id] = new PracticeRound(node, book!, Progress);
+        SetView(View.Practice);
+    }
+
+    // Weak spots open or folded, kept while the app is open.
+    private static bool weakOpen = true;
+
+    // Tree, grid or decode view of the Verbs tab, kept while the app is open.
+    private enum Mode { Tree, Grid, Decode }
+
+    private static Mode mode = Mode.Tree;
+
+    private void OpenFromGrid(VerbNode node)
+    {
+        mode = Mode.Tree;
+        Go(node);
+    }
+
+    private void PractiseFromGrid(VerbNode node)
+    {
+        mode = Mode.Tree;
+        PractiseNode(node);
+    }
+
+    private void Resume(IVerbRound round)
+    {
+        mode = Mode.Tree;
+        current = round.Node;
+        lastNodeId = round.Node.Id;
+        SetView(round.IsTest ? View.Test : View.Practice);
+    }
+
+    // The Rules page is built once per item, so its quick check keeps its answer while you read.
+    private RulePage? rulesPage;
+    private string? rulesFor;
+
+    private RulePage RulesFor(VerbNode node)
+    {
+        if (rulesPage is null || rulesFor != node.Id)
+        {
+            rulesPage = VerbRules.For(node, book!);
+            rulesFor = node.Id;
+        }
+        return rulesPage;
+    }
+}

@@ -1,0 +1,185 @@
+@* Shows a practice round (PracticeRound): multiple choice for new forms, spelling with letter tiles once you know them.
+   All state lives in the round, so this screen can close and reopen without losing anything. *@
+@inject IJSRuntime JS
+
+<div class="vp">
+    @if (R.Session.Count == 0)
+    {
+        <div class="empty">Nothing to practise here.</div>
+    }
+    else if (R.Done)
+    {
+        var right = R.Results.Count(r => r.Grade == Grade.Right);
+        var slips = R.Results.Count(r => r.Grade == Grade.AccentSlip);
+        <div class="vp-done">
+            <div class="done-title">@(right == R.Results.Count ? "¡Perfecto!" : right * 2 >= R.Results.Count ? "¡Bien!" : "Sigue así")</div>
+            <p>@($"{right} of {R.Results.Count} right" + (slips > 0 ? $", {slips} with a missing accent" : "") + ".")</p>
+            @{ var byPerson = R.MistakesByPerson(); }
+            @if (byPerson.Any(x => x.Mistakes > 0))
+            {
+                <div class="vp-persons">
+                    <div class="vp-persons-title">Mistakes by person this round</div>
+                    @foreach (var (label, m) in byPerson.Where(x => x.Mistakes > 0))
+                    {
+                        <div class="vp-person-row"><span>@label</span><span>@Fmt(m)</span></div>
+                    }
+                </div>
+            }
+            <div class="vp-done-actions">
+                <button type="button" class="primary" @onclick="Again">Practise again</button>
+                <button type="button" class="tool" @onclick="() => OnClose.InvokeAsync()">Back</button>
+            </div>
+        </div>
+    }
+    else if (R.Question is { } q)
+    {
+        var negative = q.Person.Negative;
+        var answered = R.Answered;
+        var grade = R.Grade;
+        var matched = R.Matched;
+        <div class="vp-progress" aria-label="@($"Question {R.PositionText}")">
+            <div class="vp-progress-fill" style="width: @(R.Index * 100 / R.Session.Count)%"></div>
+        </div>
+
+        <div class="vp-card">
+            <div class="vp-tense">@(q.Tense.Name + (q.Form.IsPattern ? $" · {VerbTree.SubtypeTitle(q.Form.Pattern!)}" : ""))</div>
+            <div class="vp-verb"><span lang="es">@q.Verb.Inf</span> <span class="vp-en">@q.Verb.En</span></div>
+            <div class="vp-person">@q.Person.Label</div>
+            <div class="vp-blank" lang="es">
+                @if (negative)
+                {
+                    <span>no </span>
+                }
+                @if (answered)
+                {
+                    <span class="vp-answer"><FormParts Verb="q.Verb" Tense="@q.Form.Tense" Person="q.Form.Person" Form="@q.Answer" /></span>
+                }
+                else
+                {
+                    <span class="vp-line">_____</span>
+                }
+            </div>
+            @if (!answered)
+            {
+                <div class="vp-hint">
+                    @((q.Typing ? "Spell the form with the letters" : "Pick the right form") + (q.Verb.Reflexive ? ", with its pronoun (me, te, se…)" : ""))
+                </div>
+            }
+        </div>
+
+        @if (!q.Typing)
+        {
+            <div class="choices" role="group" aria-label="Choose the right form">
+                @foreach (var opt in q.Options)
+                {
+                    var o = opt;
+                    if (!answered)
+                    {
+                        <button type="button" class="choice es" lang="es" @onclick="() => Pick(o)">@o</button>
+                    }
+                    else
+                    {
+                        var isRight = R.IsAnswer(o);
+                        <div class="choice es @(isRight ? "right" : o == R.Picked ? "wrong" : "dim")" lang="es">@o</div>
+                    }
+                }
+            </div>
+        }
+        else
+        {
+            <TileSpeller State="R.Spell" Locked="answered" ResultClass="@(answered ? GradeClass : "")"
+                         OnCheck="Check" OnChanged="R.Touch" />
+        }
+
+        @if (answered)
+        {
+            <div class="game-feedback @FeedbackClass" role="status">
+                <span class="fb-icon" aria-hidden="true">@(grade == Grade.Right ? "✓" : grade == Grade.AccentSlip ? "~" : "✗")</span>
+                <span>
+                    @if (grade == Grade.Right)
+                    {
+                        <span class="fb-label">Right.</span>
+                        @if (matched is not null && matched != q.Answer)
+                        {
+                            <span> <span lang="es">@matched</span> @(IsSeForm(matched) ? "is also correct (the -se form)." : "is also correct.")</span>
+                        }
+                    }
+                    else if (grade == Grade.AccentSlip)
+                    {
+                        <span class="fb-label">Almost: </span><span>check the accent: <strong class="fb-word" lang="es">@matched</strong>. Counts as half a mistake.</span>
+                    }
+                    else
+                    {
+                        <span class="fb-label">Not quite. </span><span>It's <strong class="fb-word" lang="es">@(negative ? "no " : "")@q.Answer</strong>.</span>
+                    }
+                </span>
+            </div>
+
+            @if (grade != Grade.Right)
+            {
+                <ConjugationTable Verb="q.Verb" Tense="@q.Form.Tense" Focus="q.Form.Person" />
+            }
+
+            <div class="vp-next">
+                @if (CanSpeak && Speak is not null)
+                {
+                    <button type="button" class="speak-btn" aria-label="Say it" title="Say it" @onclick="SpeakAnswer">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></svg>
+                    </button>
+                }
+                <button id="@NextId" type="button" class="primary wide" @onclick="Next">Continue</button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PracticeRound R { get; set; } = default!;
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    private const string NextId = "vp-next";
+    private bool focusPending;
+
+    private string FeedbackClass => R.Grade switch { Grade.Right => "ok", Grade.AccentSlip => "meh", _ => "no" };
+    private string GradeClass => R.Grade switch { Grade.Right => "right", Grade.AccentSlip => "almost", _ => "wrong" };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focusPending) return;
+        focusPending = false;
+        try { await JS.InvokeVoidAsync("palabras.focusById", NextId); }
+        catch (Exception) { }
+    }
+
+    private static bool IsSeForm(string form) =>
+        form.Split(' ').Any(w => w.EndsWith("se") || w.EndsWith("ses") || w.EndsWith("semos") || w.EndsWith("seis") || w.EndsWith("sen"));
+
+    private async Task Pick(string option)
+    {
+        if (!R.Pick(option)) return;
+        focusPending = true;
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task Check()
+    {
+        if (!R.Check()) return;
+        focusPending = true;
+        await OnSaved.InvokeAsync();
+    }
+
+    private void Next() => R.Next();
+
+    private void Again() => R.Start();
+
+    private async Task SpeakAnswer()
+    {
+        if (R.Question is not { } q || Speak is null) return;
+        await Speak((q.Person.Negative ? "no " : "") + q.Answer);
+    }
+
+    private static string Fmt(double m) => m % 1 == 0 ? m.ToString("0") : m.ToString("0.0");
+}

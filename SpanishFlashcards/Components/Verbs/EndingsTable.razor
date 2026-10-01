@@ -1,0 +1,8 @@
+@* A regular pattern shown on a real verb: the endings stand out in colour. *@
+
+<ConjugationTable Verb="Sample" Tense="@Tense" Caption="@($"{Sample.Inf}: {VerbGrammar.TenseById[Tense].Name}")" />
+
+@code {
+    [Parameter, EditorRequired] public string Tense { get; set; } = "";
+    [Parameter, EditorRequired] public Verb Sample { get; set; } = default!;
+}

@@ -1,0 +1,12 @@
+@* Renders a Rules page. *@
+
+<div class="vr">
+    <CascadingValue Value="Book" IsFixed="true">
+        <RuleBlocksView Blocks="Page.Blocks" />
+    </CascadingValue>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RulePage Page { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbBook Book { get; set; } = default!;
+}

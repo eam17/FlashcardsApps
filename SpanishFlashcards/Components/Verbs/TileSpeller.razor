@@ -1,0 +1,54 @@
+@* Spell an answer by tapping letter tiles: the answer so far, the tiles, and Delete / Clear / Check. *@
+
+<div class="vp-type">
+    <div class="vp-built @ResultClass" lang="es" aria-live="polite" aria-label="Your answer">
+        @if (!State.Any && !Locked)
+        {
+            <span class="vp-built-hint">Tap the letters below</span>
+        }
+        else
+        {
+            <span class="vp-built-text">@State.Typed</span>
+        }
+    </div>
+    @if (!Locked)
+    {
+        <div class="vp-tiles" role="group" aria-label="Letters">
+            @for (var t = 0; t < State.Tiles.Count; t++)
+            {
+                var ti = t;
+                var space = State.Tiles[ti] == " ";
+                <button type="button" class="spell-tile @(space ? "space" : "")" lang="es" disabled="@State.Used[ti]"
+                        aria-label="@(space ? "space" : State.Tiles[ti])" @onclick="() => Tap(ti)">@(space ? "space" : State.Tiles[ti])</button>
+            }
+        </div>
+        <div class="vp-tile-actions">
+            <button type="button" class="tool" disabled="@(!State.Any)" @onclick="Undo" aria-label="Delete the last letter">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z" /><path d="m17 9-6 6" /><path d="m11 9 6 6" /></svg>
+                Delete
+            </button>
+            <button type="button" class="tool" disabled="@(!State.Any)" @onclick="Clear">Clear</button>
+            <button type="button" class="primary vp-check" disabled="@(!State.Any)" @onclick="() => OnCheck.InvokeAsync()">@CheckLabel</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TileState State { get; set; } = default!;
+
+    /// <summary>Answer given: tiles hidden, the answer box shows the result colour.</summary>
+    [Parameter] public bool Locked { get; set; }
+
+    /// <summary>"right", "almost" or "wrong" once answered (empty before).</summary>
+    [Parameter] public string ResultClass { get; set; } = "";
+
+    [Parameter] public string CheckLabel { get; set; } = "Check";
+    [Parameter] public EventCallback OnCheck { get; set; }
+
+    /// <summary>Called after every tap, delete or clear (so the owner can note activity).</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private Task Tap(int i) { State.Tap(i); return OnChanged.InvokeAsync(); }
+    private Task Undo() { State.Undo(); return OnChanged.InvokeAsync(); }
+    private Task Clear() { State.Clear(); return OnChanged.InvokeAsync(); }
+}

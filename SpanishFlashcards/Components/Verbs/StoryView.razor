@@ -1,0 +1,98 @@
+@* The Story tab of a tense: a short story using that tense. Its verbs are colour-coded; tap any verb to see
+   what it is and open it in the tree. The English for each sentence is hidden until you ask for it. *@
+
+<div class="st">
+    <div class="st-head">
+        <div class="st-title" lang="es">@Story.Title</div>
+        <div class="st-title-en">@Story.TitleEn</div>
+    </div>
+    <p class="list-hint">@($"Verbs in the {VerbGrammar.TenseById[Story.Tense].Name.ToLowerInvariant()} are coloured. Tap any verb to see what it is. Try reading each sentence before you look at the English.")</p>
+    <div class="st-tools">
+        <button type="button" class="tool small" aria-pressed="@(showAll ? "true" : "false")" @onclick="() => showAll = !showAll">
+            @(showAll ? "Hide the English" : "Show all the English")
+        </button>
+        @if (CanSpeak && Speak is not null)
+        {
+            <button type="button" class="tool small" @onclick="ReadAll">Read it aloud</button>
+        }
+    </div>
+    <ColorKey Kinds="Kinds" />
+
+    <ol class="st-sentences">
+        @for (var i = 0; i < Story.Sentences.Count; i++)
+        {
+            var si = i;
+            var sentence = Story.Sentences[si];
+            <li class="st-sentence">
+                <div class="st-es">
+                    <StorySentenceView Sentence="sentence" Book="Book" Tense="@Story.Tense"
+                                       Selected="@(selSentence == si ? selToken : null)" OnTap="t => Select(si, t)" />
+                    @if (CanSpeak && Speak is not null)
+                    {
+                        <button type="button" class="st-say" aria-label="Say this sentence" title="Say it" @onclick="() => Speak!(sentence.Text)">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></svg>
+                        </button>
+                    }
+                </div>
+
+                @if (selSentence == si && selToken is { } ti && sentence.Tokens[ti] is { IsVerb: true } tok)
+                {
+                    var verb = Book.ByInf.GetValueOrDefault(tok.V!);
+                    var node = VerbStories.NodeFor(tok, Tree, Book);
+                    <div class="st-info" role="status">
+                        <div>
+                            <strong lang="es">@tok.X</strong>
+                            <span> → </span>
+                            <strong lang="es">@tok.V</strong>
+                            @if (verb is not null)
+                            {
+                                <span class="st-info-en"> (@verb.En)</span>
+                            }
+                        </div>
+                        <div class="st-info-sub">@($"{VerbGrammar.TenseById[tok.Te!].Name} · {tok.PersonLabel()}")@(node is not null && node.Kind != NodeKind.Verb ? " · regular" : "")</div>
+                        @if (node is not null)
+                        {
+                            <button type="button" class="tool small" @onclick="() => OnOpen.InvokeAsync(node)">Open in the tree</button>
+                        }
+                    </div>
+                }
+
+                @if (showAll || revealed.Contains(si))
+                {
+                    <div class="st-en">@sentence.En</div>
+                }
+                else
+                {
+                    <button type="button" class="st-en-btn" @onclick="() => revealed.Add(si)">English</button>
+                }
+            </li>
+        }
+    </ol>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Story Story { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbBook Book { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbNode Tree { get; set; } = default!;
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+    [Parameter] public EventCallback<VerbNode> OnOpen { get; set; }
+
+    private bool showAll;
+    private readonly HashSet<int> revealed = new();
+    private int? selSentence;
+    private int? selToken;
+
+    private IEnumerable<PartKind> Kinds => VerbGrammar.TenseById[Story.Tense].IsCompound
+        ? [PartKind.Helper, PartKind.Stem, PartKind.Ending, PartKind.Change]
+        : [PartKind.Stem, PartKind.Ending, PartKind.Change];
+
+    private void Select(int sentence, int token)
+    {
+        if (selSentence == sentence && selToken == token) { selSentence = null; selToken = null; return; }
+        selSentence = sentence;
+        selToken = token;
+    }
+
+    private Task ReadAll() => Speak!(string.Join(" ", Story.Sentences.Select(s => s.Text)));
+}

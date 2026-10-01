@@ -1,0 +1,161 @@
+@* The Test view of a tree item: intro, spelling-only questions with no feedback, then the results. *@
+
+<div class="tst">
+    @if (Round is null)
+    {
+        var plan = PlannedCount();
+        <div class="vp-card tst-intro">
+            <div class="vp-tense">Test</div>
+            <div class="tst-intro-title">@Node.Title</div>
+            <ul class="tst-intro-list">
+                <li>@($"About {plan} questions. You spell every answer; there's no multiple choice.")</li>
+                <li>No right or wrong until the end. Not sure? Tap <strong>Don't know</strong>.</li>
+                <li>Groups you get right are marked as known and come back in about a week to confirm.</li>
+                <li>Score @VerbTests.PassPercent% or more and this becomes <strong>Mastered</strong>.</li>
+            </ul>
+            @if (Last is { } last)
+            {
+                <p class="tst-last">@($"Last test: {last.Score}% on {last.Date.ToLocalTime():MMM d}{(last.Passed ? " (passed)" : "")}.")</p>
+            }
+            <button type="button" class="primary wide" @onclick="() => OnStart.InvokeAsync()">Start the test</button>
+        </div>
+    }
+    else if (Round.Done)
+    {
+        <div class="vp-done">
+            <div class="done-title">@(Round.Passed ? "¡Dominado!" : Round.Percent >= 70 ? "¡Casi!" : "Sigue practicando")</div>
+            <div class="tst-score @(Round.Passed ? "pass" : "")">@Round.Percent%</div>
+            <p>
+                @if (Round.Passed)
+                {
+                    <text>Passed. <strong>@Node.Title</strong> is now Mastered.</text>
+                }
+                else
+                {
+                    <text>@($"{VerbTests.PassPercent}% passes. Practise the weak groups below, then try again.")</text>
+                }
+            </p>
+        </div>
+
+        <section class="tst-units" aria-label="Groups">
+            @foreach (var u in Round.Units)
+            {
+                var unit = u.Unit;
+                <div class="tst-unit @(u.Passed ? "ok" : "weak")">
+                    <span class="tst-unit-mark" aria-hidden="true">@(u.Passed ? "✓" : "!")</span>
+                    <span class="tst-unit-text">
+                        <span class="tst-unit-title">@UnitTitle(unit)</span>
+                        <span class="tst-unit-sub">@(u.Passed ? "Known: comes back in about a week" : $"Weak: {u.Percent}%")</span>
+                    </span>
+                    @if (!u.Passed)
+                    {
+                        <button type="button" class="tool small" @onclick="() => OnPractise.InvokeAsync(unit)">Practise</button>
+                    }
+                </div>
+            }
+        </section>
+
+        var byPerson = Round.MistakesByPerson();
+        @if (byPerson.Any(x => x.Mistakes > 0))
+        {
+            <div class="vp-persons tst-persons">
+                <div class="vp-persons-title">Mistakes by person</div>
+                @foreach (var (label, m) in byPerson.Where(x => x.Mistakes > 0))
+                {
+                    <div class="vp-person-row"><span>@label</span><span>@(m % 1 == 0 ? m.ToString("0") : m.ToString("0.0"))</span></div>
+                }
+            </div>
+        }
+
+        <details class="vr-section">
+            <summary>@($"Your answers ({Round.Answers.Count})")</summary>
+            <div class="vr-section-body">
+                @foreach (var a in Round.Answers)
+                {
+                    var q = a.Question;
+                    <div class="tst-answer @(a.Grade == Grade.Right ? "ok" : a.Grade == Grade.AccentSlip ? "meh" : "no")">
+                        <span class="tst-answer-q">@($"{q.Verb.Inf} · {q.Tense.Name} · {q.Person.Label}")</span>
+                        <span class="tst-answer-a" lang="es">
+                            @if (a.Grade != Grade.Right)
+                            {
+                                <s>@(a.Given.Length > 0 ? a.Given : "(don't know)")</s>
+                                <span> → </span>
+                            }
+                            <FormParts Verb="q.Verb" Tense="@q.Form.Tense" Person="q.Form.Person" Form="@q.Answer" />
+                        </span>
+                    </div>
+                }
+            </div>
+        </details>
+
+        <div class="vp-done-actions tst-again">
+            <button type="button" class="primary" @onclick="() => OnStart.InvokeAsync()">Take the test again</button>
+            <button type="button" class="tool" @onclick="() => OnClose.InvokeAsync()">Back</button>
+        </div>
+    }
+    else if (Round.Question is { } q)
+    {
+        <div class="vp-progress" aria-label="@($"Question {Round.PositionText}")">
+            <div class="vp-progress-fill" style="width: @(Round.Index * 100 / Round.Items.Count)%"></div>
+        </div>
+        <div class="vp-card">
+            <div class="vp-tense">@($"Test · {Round.PositionText}")</div>
+            <div class="vp-tense tst-q-tense">@q.Tense.Name</div>
+            <div class="vp-verb"><span lang="es">@q.Verb.Inf</span> <span class="vp-en">@q.Verb.En</span></div>
+            <div class="vp-person">@q.Person.Label</div>
+            <div class="vp-blank" lang="es">
+                @if (q.Person.Negative)
+                {
+                    <span>no </span>
+                }
+                <span class="vp-line">_____</span>
+            </div>
+            @if (q.Verb.Reflexive)
+            {
+                <div class="vp-hint">With its pronoun (me, te, se…)</div>
+            }
+        </div>
+        <TileSpeller @key="Round.Index" State="Round.Spell" CheckLabel="Next" OnCheck="Answer" OnChanged="Round.Touch" />
+        <button type="button" class="skip-link" @onclick="DontKnow">Don't know</button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VerbNode Node { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbBook Book { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+
+    /// <summary>The test in progress or just finished; null shows the intro.</summary>
+    [Parameter] public TestRound? Round { get; set; }
+
+    [Parameter] public EventCallback OnStart { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<VerbNode> OnPractise { get; set; }
+
+    private VerbTestRecord? Last => Progress.VerbTests.GetValueOrDefault(Node.Id);
+
+    private int PlannedCount() => VerbTests.Plan(Node, Book).Count;
+
+    private async Task Answer()
+    {
+        Round!.Answer();
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task DontKnow()
+    {
+        Round!.Answer(dontKnow: true);
+        await OnSaved.InvokeAsync();
+    }
+
+    /// <summary>"o → ue" plus where it is when the test covers more than one tense level.</summary>
+    private string UnitTitle(VerbNode unit)
+    {
+        if (unit == Node) return unit.Title;
+        var path = unit.Ancestors().Reverse()
+            .Where(a => a.Kind is NodeKind.Type && a != Node && !Node.Ancestors().Contains(a))
+            .Select(a => a.Title).ToList();
+        return path.Count == 0 ? unit.Title : $"{string.Join(" › ", path)} › {unit.Title}";
+    }
+}

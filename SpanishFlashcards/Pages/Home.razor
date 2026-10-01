@@ -22,18 +22,24 @@ else
         <header class="top">
             <div class="top-row">
                 <h1>@ScreenTitle</h1>
-                <div class="score" title="Words learned">
-                    <span class="score-num">@LearnedCount</span><span class="score-of">/@words.Count learned</span>
+                @if (tab != Tab.Verbs)
+                {
+                    <div class="score" title="Words learned">
+                        <span class="score-num">@LearnedCount</span><span class="score-of">/@words.Count learned</span>
+                    </div>
+                }
+            </div>
+            @if (tab != Tab.Verbs)
+            {
+                <div class="progress" role="progressbar" aria-label="Words learned"
+                     aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Percent">
+                    <div class="progress-fill" style="width: @(Percent)%"></div>
                 </div>
-            </div>
-            <div class="progress" role="progressbar" aria-label="Words learned"
-                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Percent">
-                <div class="progress-fill" style="width: @(Percent)%"></div>
-            </div>
+            }
         </header>
 
         @* ---------- group picker: frequency groups, topics, tricky words ---------- *@
-        @if (tab != Tab.Settings)
+        @if (tab is not (Tab.Settings or Tab.Verbs))
         {
         <div class="group-picker" role="group" aria-label="Word group">
             <button type="button" class="tool icon" aria-label="Previous group"
@@ -67,7 +73,7 @@ else
             </button>
         </div>
         }
-        @if (tab is Tab.ToLearn or Tab.Learned or Tab.Games)
+        @if (tab is Tab.Words or Tab.Games)
         {
             <div class="group-progress">@groupLearned of @groupWords.Count learned · @groupRequired reviews left today</div>
         }
@@ -319,8 +325,17 @@ else
                     </section>
 
                     <section class="set-card">
+                        <h2>Verbs</h2>
+                        <label class="check-row">
+                            <input type="checkbox" @bind="progress.ShowVosotros" @bind:after="VosotrosChanged" />
+                            <span>Include <em lang="es">vosotros</em></span>
+                        </label>
+                        <p><em lang="es">Vosotros</em> (you all, informal) is used in Spain; Latin America says <em lang="es">ustedes</em> instead. Turn it off to hide it from the verb tables, practice, tests and scores. Your progress on it is kept.</p>
+                    </section>
+
+                    <section class="set-card">
                         <h2>Backup and transfer</h2>
-                        <p>Your progress is saved in this browser only. Export it to keep a backup or to move it to another phone or browser, then Import it there. Import replaces the progress on that device.</p>
+                        <p>Your progress is saved in this browser only. Export it to keep a backup or to move it to another phone or browser, then Import it there. Import replaces the progress on that device. Verb progress is only in the JSON file (the CSV is a word list).</p>
                         <div class="backup-buttons">
                             <button type="button" class="tool" @onclick="ExportJson">Export JSON</button>
                             <button type="button" class="tool" @onclick="ExportCsv">Export CSV</button>
@@ -355,8 +370,9 @@ else
                             <li>New and level-1 words: pick the English. Level 2: pick the Spanish. Level 3+: recall the Spanish yourself. Level 4 = learned.</li>
                             <li>When you're done, <strong>Keep going</strong> gives you extra practice. It never moves words up, so it can't make a word look learned before it is.</li>
                             <li>Answer fast to move up (time limits above). A right but slow answer shows a small clock and the word stays at its level.</li>
-                            <li><strong>Mark learned</strong> in the To learn list: the word never comes back.</li>
+                            <li><strong>Mark learned</strong> in the Words list: the word never comes back.</li>
                             <li>Words you forget twice or more become <strong>tricky</strong> and show up more in games.</li>
+                            <li><strong>Verbs</strong>: conjugation by tense, with rules and practice for each group. Separate from the word cards.</li>
                         </ul>
                     </section>
 
@@ -369,6 +385,10 @@ else
                     </section>
                 </div>
             }
+            else if (tab == Tab.Verbs)
+            {
+                <VerbsHub Progress="progress" OnProgressChanged="SaveProgress" CanSpeak="canSpeak" Speak="Speak" />
+            }
             else if (tab == Tab.Games)
             {
                 <GamesHub AllWords="words" GroupWords="groupWords" GroupLabel="@group.Label"
@@ -377,20 +397,27 @@ else
             }
             else
             {
-                var isLearnedTab = tab == Tab.Learned;
-                var items = groupWords.Where(w => Srs.IsLearned(State(w)) == isLearnedTab).ToList();
+                var learnedCount = groupLearned;
+                var toLearnCount = groupWords.Count - groupLearned;
+                var items = groupWords.Where(w => wordsFilter switch
+                {
+                    WordsFilter.ToLearn => !Srs.IsLearned(State(w)),
+                    WordsFilter.Learned => Srs.IsLearned(State(w)),
+                    _ => true,
+                }).ToList();
 
                 <div class="list-screen">
-                    <p class="list-hint">
-                        @(isLearnedTab
-                            ? "Words land here after you answer them in Spanish on schedule up to level 4, or when you tap Mark learned (those never come back). Tap Relearn to practice a word again."
-                            : "New words start with picking the English meaning. At level 2 they switch: you see the English and answer in Spanish.")
-                    </p>
+                    <div class="segmented words-filter" role="tablist" aria-label="Which words">
+                        <button type="button" role="tab" class="seg @(wordsFilter == WordsFilter.ToLearn ? "on" : "")" aria-selected="@(wordsFilter == WordsFilter.ToLearn ? "true" : "false")" @onclick="() => wordsFilter = WordsFilter.ToLearn">@($"To learn ({toLearnCount})")</button>
+                        <button type="button" role="tab" class="seg @(wordsFilter == WordsFilter.Learned ? "on" : "")" aria-selected="@(wordsFilter == WordsFilter.Learned ? "true" : "false")" @onclick="() => wordsFilter = WordsFilter.Learned">@($"Learned ({learnedCount})")</button>
+                        <button type="button" role="tab" class="seg @(wordsFilter == WordsFilter.All ? "on" : "")" aria-selected="@(wordsFilter == WordsFilter.All ? "true" : "false")" @onclick="() => wordsFilter = WordsFilter.All">All</button>
+                    </div>
+                    <p class="list-hint">@WordsHint</p>
 
                     @if (items.Count == 0)
                     {
                         <div class="empty">
-                            @(isLearnedTab
+                            @(wordsFilter == WordsFilter.Learned
                                 ? "Nothing here yet. Keep reviewing. Words land here after a few successful reviews."
                                 : "You've learned every word in this group. ¡Enhorabuena!")
                         </div>
@@ -415,9 +442,10 @@ else
                                         </div>
                                         <div class="row-sub">@w.En · @Srs.DueLabel(State(w), today)@(Srs.IsNew(State(w)) || Srs.IsRetired(State(w)) ? "" : Srs.AsksForSpanish(State(w)) ? " · answer in Spanish" : " · answer in English")</div>
                                     </div>
+                                    @{ var isLearned = Srs.IsLearned(State(w)); }
                                     <button type="button" class="tool"
-                                            aria-label="@(isLearnedTab ? $"Move back to learn: {w.Es}" : $"Mark as learned: {w.Es}")"
-                                            @onclick="() => Move(w, isLearnedTab)">@(isLearnedTab ? "Relearn" : "Mark learned")</button>
+                                            aria-label="@(isLearned ? $"Move back to learn: {w.Es}" : $"Mark as learned: {w.Es}")"
+                                            @onclick="() => Move(w, isLearned)">@(isLearned ? "Relearn" : "Mark learned")</button>
                                 </div>
                             </Virtualize>
                         </div>
@@ -434,19 +462,18 @@ else
                 </span>
                 Cards
             </button>
-            <button type="button" class="tab @(tab == Tab.ToLearn ? "on" : "")" aria-pressed="@(tab == Tab.ToLearn ? "true" : "false")" @onclick="() => SetTab(Tab.ToLearn)">
+            <button type="button" class="tab @(tab == Tab.Words ? "on" : "")" aria-pressed="@(tab == Tab.Words ? "true" : "false")" @onclick="() => SetTab(Tab.Words)">
                 <span class="tab-pill">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" /><circle cx="4.5" cy="6" r="1" /><circle cx="4.5" cy="12" r="1" /><circle cx="4.5" cy="18" r="1" /></svg>
-                    <span class="tab-count">@(groupWords.Count - groupLearned)</span>
+                    <span class="tab-count" title="Words to learn">@(groupWords.Count - groupLearned)</span>
                 </span>
-                To learn
+                Words
             </button>
-            <button type="button" class="tab @(tab == Tab.Learned ? "on" : "")" aria-pressed="@(tab == Tab.Learned ? "true" : "false")" @onclick="() => SetTab(Tab.Learned)">
+            <button type="button" class="tab @(tab == Tab.Verbs ? "on" : "")" aria-pressed="@(tab == Tab.Verbs ? "true" : "false")" @onclick="() => SetTab(Tab.Verbs)">
                 <span class="tab-pill">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></svg>
-                    <span class="tab-count">@groupLearned</span>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12h-8" /><path d="M21 6H8" /><path d="M21 18h-8" /><path d="M3 6v4c0 1.1.9 2 2 2h3" /><path d="M3 10v6c0 1.1.9 2 2 2h3" /></svg>
                 </span>
-                Learned
+                Verbs
             </button>
             <button type="button" class="tab @(tab == Tab.Games ? "on" : "")" aria-pressed="@(tab == Tab.Games ? "true" : "false")" @onclick="() => SetTab(Tab.Games)">
                 <span class="tab-pill">
@@ -465,7 +492,16 @@ else
 }
 
 @code {
-    private enum Tab { Study, ToLearn, Learned, Games, Settings }
+    private enum Tab { Study, Words, Verbs, Games, Settings }
+    private enum WordsFilter { ToLearn, Learned, All }
+    private WordsFilter wordsFilter = WordsFilter.ToLearn;
+
+    private string WordsHint => wordsFilter switch
+    {
+        WordsFilter.Learned => "Words land here after you answer them in Spanish on schedule up to level 4, or when you tap Mark learned (those never come back). Tap Relearn to practice a word again.",
+        WordsFilter.ToLearn => "New words start with picking the English meaning. At level 2 they switch: you see the English and answer in Spanish. Tap Mark learned for a word you already know.",
+        _ => "Every word in this group. Mark learned skips a word for good; Relearn brings it back.",
+    };
     private enum ChoiceKind { None, English, Spanish }
 
     private sealed record GroupDef(string Id, string Label, string Section, Func<Word, bool> Includes);
@@ -518,6 +554,7 @@ else
             progress.Order = null;
 
         if (progress.Group is { } g && groups.Any(x => x.Id == g)) groupId = g;
+        VerbSettings.Vosotros = progress.ShowVosotros;
         words = all;
     }
 
@@ -581,10 +618,10 @@ else
     private string ScreenTitle => tab switch
     {
         Tab.Study => "Learn",
-        Tab.ToLearn => "To learn",
         Tab.Games => "Games",
+        Tab.Verbs => "Verbs",
         Tab.Settings => "Settings",
-        _ => "Learned",
+        _ => "Words",
     };
 
     /// <summary>Start a fresh daily review counter when the day changes.</summary>
@@ -785,6 +822,12 @@ else
 
     private Task SaveProgress() => Store.SaveAsync(progress);
 
+    private Task VosotrosChanged()
+    {
+        VerbSettings.Vosotros = progress.ShowVosotros;
+        return SaveProgress();
+    }
+
     private void Flip() => flipped = !flipped;
 
     private void ResetCardView()
@@ -964,9 +1007,10 @@ else
 
     private async Task ExportJson()
     {
-        var json = ProgressTransfer.ToJson(words!, progress.Cards);
+        var json = ProgressTransfer.ToJson(words!, progress.Cards, progress.VerbSkills, progress.VerbTests);
         await JS.InvokeVoidAsync("palabras.downloadText", $"palabras-progress-{DateTime.Now:yyyy-MM-dd}.json", "application/json", json);
-        ShowTransfer($"Exported {LearnedCount} learned and {words!.Count - LearnedCount} not-yet-learned words.");
+        var verbForms = progress.VerbSkills.Values.Count(VerbSrs.IsSeen);
+        ShowTransfer($"Exported {LearnedCount} learned and {words!.Count - LearnedCount} not-yet-learned words, and {verbForms} practised verb forms.");
     }
 
     private async Task ExportCsv()
@@ -986,6 +1030,12 @@ else
 
             var result = ProgressTransfer.Import(text, e.File.Name, words!);
             progress.Cards = result.Cards;
+            // Older exports and CSV files have no verb progress: keep what's on this device.
+            if (result.VerbSkills is not null)
+            {
+                progress.VerbSkills = result.VerbSkills;
+                progress.VerbTests = result.VerbTests ?? new();
+            }
             practiceIdx = 0;
             ResetCardView();
             skipped.Clear();
@@ -993,6 +1043,9 @@ else
 
             var msg = $"Imported {result.Learned} learned and {result.Learning} still-learning words from {e.File.Name}.";
             if (result.Unknown > 0) msg += $" {result.Unknown} words weren't in the app's list and were skipped.";
+            msg += result.VerbSkills is null
+                ? " The file has no verb progress, so your verb progress on this device was kept."
+                : $" Verb progress: {result.VerbSkills.Count} practised forms.";
             ShowTransfer(msg);
         }
         catch (Exception ex)
@@ -1010,6 +1063,9 @@ else
     private async Task Reset()
     {
         progress.Cards = new();
+        progress.VerbSkills = new();
+        progress.VerbRotation = new();
+        progress.VerbTests = new();
         progress.Order = null;
         progress.ReviewsDoneToday = 0;
         practiceIdx = 0;

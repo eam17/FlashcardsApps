@@ -1,0 +1,58 @@
+@* One story sentence. Verbs in the highlighted set (or in the story's tense) are colour-coded; with OnTap, every verb can be tapped. *@
+
+<span class="st-line" lang="es">
+    @for (var i = 0; i < Sentence.Tokens.Count; i++)
+    {
+        var idx = i;
+        var tok = Sentence.Tokens[idx];
+        if (!tok.IsVerb)
+        {
+            @tok.X
+            continue;
+        }
+        var on = Highlight?.Contains(idx) ?? tok.Te == Tense;
+        var verb = Book.ByInf.GetValueOrDefault(tok.V!);
+        if (on && Plain)
+        {
+            <span class="st-verb target">@tok.X</span>
+            continue;
+        }
+        var content = Content(tok, on, verb);
+        if (OnTap.HasDelegate)
+        {
+            <button type="button" class="st-verb @(on ? "on" : "") @(Selected == idx ? "sel" : "")"
+                    aria-label="@($"{tok.X}: tap to see what it is")" @onclick="() => OnTap.InvokeAsync(idx)">@content</button>
+        }
+        else
+        {
+            <span class="st-verb @(on ? "on" : "")">@content</span>
+        }
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public StorySentence Sentence { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbBook Book { get; set; } = default!;
+
+    /// <summary>The story's tense: its verbs are coloured (unless Highlight says which tokens to colour).</summary>
+    [Parameter] public string? Tense { get; set; }
+
+    /// <summary>Token indexes to colour, instead of "every verb in the story's tense".</summary>
+    [Parameter] public IReadOnlySet<int>? Highlight { get; set; }
+
+    [Parameter] public int? Selected { get; set; }
+
+    /// <summary>Mark the highlighted verbs without colouring their parts (Decode: don't give the answer away).</summary>
+    [Parameter] public bool Plain { get; set; }
+    [Parameter] public EventCallback<int> OnTap { get; set; }
+
+    private RenderFragment Content(StoryToken tok, bool on, Verb? verb)
+    {
+        if (on && verb is not null)
+        {
+            var capital = char.IsUpper(tok.X[0]);
+            return @<FormParts Verb="verb" Tense="@(tok.Te!)" Person="tok.Person" Form="@tok.X" Capitalize="capital" />;
+        }
+        return @<text>@tok.X</text>;
+    }
+}

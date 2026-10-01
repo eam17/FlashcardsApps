@@ -1,0 +1,105 @@
+@* One verb in one tense, colour-coded (see ColorKey).
+   Six-person tenses use the classic layout: singular on the left, plural on the right.
+   Highlighted cells are the forms the page is about; yo, tú, él and ellos together get a boot outline. *@
+
+@if (Tense == "cmd")
+{
+    <table class="vt">
+        <caption class="@(Caption is null ? "sr-only" : "")">@CaptionText</caption>
+        <tbody>
+            @for (var i = 0; i < VerbGrammar.CommandPersons.Count; i++)
+            {
+                var p = i;
+                var form = Verb.Form(Tense, p);
+                if (form is null || !VerbSettings.IsActive(Tense, p)) continue;
+                var person = VerbGrammar.CommandPersons[p];
+                <tr class="@(Highlight?.Contains(p) == true ? "hi" : "") @(Focus == p ? "focus" : "")">
+                    <th scope="row">@person.Label</th>
+                    <td>
+                        @if (person.Negative)
+                        {
+                            <span class="vt-no" lang="es">no </span>
+                        }
+                        <FormParts Verb="Verb" Tense="@Tense" Person="p" Form="@form" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    var boot = IsBoot;
+    <table class="vt grid @(boot ? "boot" : "")">
+        <caption class="@(Caption is null ? "sr-only" : "")">@CaptionText</caption>
+        <tbody>
+            @for (var r = 0; r < 3; r++)
+            {
+                <tr>
+                    @foreach (var p in new[] { r, r + 3 })
+                    {
+                        var form = VerbSettings.IsActive(Tense, p) ? Verb.Form(Tense, p) : null;
+                        <td class="@CellClass(p, boot)">
+                            @if (form is not null)
+                            {
+                                <span class="vt-label">@VerbGrammar.Persons[p].Label</span>
+                                <FormParts Verb="Verb" Tense="@Tense" Person="p" Form="@form" />
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+<ColorKey Kinds="Kinds()" />
+
+@code {
+    [Parameter, EditorRequired] public Verb Verb { get; set; } = default!;
+    [Parameter, EditorRequired] public string Tense { get; set; } = "";
+
+    /// <summary>Persons to emphasise (the forms the page is about).</summary>
+    [Parameter] public IReadOnlySet<int>? Highlight { get; set; }
+
+    /// <summary>The person just asked in practice: shown with a frame.</summary>
+    [Parameter] public int? Focus { get; set; }
+
+    /// <summary>Visible caption; without one the caption is for screen readers only.</summary>
+    [Parameter] public string? Caption { get; set; }
+
+    private string CaptionText => Caption ?? $"{Verb.Inf}, {VerbGrammar.TenseById[Tense].Name}";
+
+    /// <summary>The four "stressed" forms of a stem-changer: the cells form a boot.</summary>
+    private bool IsBoot => Tense != "cmd" && Highlight is { Count: 4 } h && h.SetEquals([0, 1, 2, 5]);
+
+    private string CellClass(int p, bool boot)
+    {
+        var c = "vt-cell";
+        if (Highlight?.Contains(p) == true) c += " hi";
+        if (Focus == p) c += " focus";
+        if (boot)
+        {
+            c += p switch
+            {
+                0 => " b-t b-l b-r",
+                1 => " b-l b-r",
+                2 => " b-l b-b",
+                5 => " b-t b-r b-b",
+                _ => "",
+            };
+        }
+        return c;
+    }
+
+    private IEnumerable<PartKind> Kinds()
+    {
+        var persons = VerbGrammar.PersonsFor(Tense).Count;
+        for (var p = 0; p < persons; p++)
+        {
+            var form = Verb.Form(Tense, p);
+            if (form is null || !VerbSettings.IsActive(Tense, p)) continue;
+            foreach (var part in VerbParts.Split(Verb, Tense, p, form))
+                if (part.Text.Trim().Length > 0) yield return part.Kind;
+        }
+    }
+}

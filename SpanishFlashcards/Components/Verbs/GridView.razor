@@ -1,0 +1,178 @@
+@* The colour grid: regular patterns and irregular verbs (rows) by tense (columns), coloured from weak to strong.
+   Tap a cell to see that verb's table in that tense, then open it in the tree or practise it. *@
+
+<div class="vg">
+    <div class="vg-tools">
+        <input type="search" class="vg-search" placeholder="Find a verb" aria-label="Find a verb"
+               autocomplete="off" autocapitalize="off" spellcheck="false" @bind="search" @bind:event="oninput" />
+        <div class="segmented" role="tablist" aria-label="Order">
+            <button type="button" role="tab" class="seg @(weakestFirst ? "" : "on")" aria-selected="@(weakestFirst ? "false" : "true")" @onclick="() => weakestFirst = false">Common</button>
+            <button type="button" role="tab" class="seg @(weakestFirst ? "on" : "")" aria-selected="@(weakestFirst ? "true" : "false")" @onclick="() => weakestFirst = true">Weakest</button>
+        </div>
+    </div>
+
+    <div class="vg-key" aria-label="Colour key">
+        @foreach (var level in Levels)
+        {
+            <span class="vg-key-item"><span class="vg-swatch lvl-@level.ToString().ToLowerInvariant()" aria-hidden="true">@(level == GridLevel.Regular ? "·" : "")</span>@VerbGrid.Label(level)</span>
+        }
+    </div>
+
+    <div class="vg-scroll">
+        <table class="vg-table">
+            <thead>
+                <tr>
+                    <th class="vg-corner" scope="col">Verb</th>
+                    @foreach (var t in VerbGrammar.Tenses)
+                    {
+                        <th scope="col" title="@t.Name"><span class="vg-col">@VerbGrid.Short(t.Id)</span></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @{ var patterns = Grid.Patterns.Where(Matches).ToList(); }
+                @if (patterns.Count > 0)
+                {
+                    <tr class="vg-section"><th scope="colgroup" colspan="@(VerbGrammar.Tenses.Count + 1)">Regular verbs (by ending)</th></tr>
+                    @foreach (var row in patterns)
+                    {
+                        @Row(row)
+                    }
+                }
+                @{ var verbs = OrderedVerbs(); }
+                <tr class="vg-section"><th scope="colgroup" colspan="@(VerbGrammar.Tenses.Count + 1)">@($"Verbs with irregular forms ({verbs.Count})")</th></tr>
+                @foreach (var row in verbs)
+                {
+                    @Row(row)
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (selected is { } cell)
+{
+    var level = VerbGrid.Level(cell, Progress.VerbSkills);
+    var (score, _) = VerbGrid.Score(cell, Progress.VerbSkills);
+    var tense = VerbGrammar.TenseById[cell.Tense];
+    var sample = cell.SampleVerb;
+    <div class="vg-backdrop" @onclick="Close"></div>
+    <div class="vg-sheet" role="dialog" aria-modal="true" aria-label="@($"{cell.Row.Title}, {tense.Name}")">
+        <div class="vg-sheet-head">
+            <div>
+                <div class="vg-sheet-title"><span lang="@(cell.Row.IsPattern ? "en" : "es")">@cell.Row.Title</span> · @tense.Name</div>
+                <div class="vg-sheet-sub">
+                    @if (level == GridLevel.Regular)
+                    {
+                        <text>@($"Regular in this tense: it follows the {cell.Node?.Title ?? "regular"} pattern.")</text>
+                    }
+                    else
+                    {
+                        <text>@($"{char.ToUpper(VerbGrid.Label(level)[0])}{VerbGrid.Label(level)[1..]} · {(int)Math.Round(score * 100)}%")</text>
+                    }
+                </div>
+            </div>
+            <button type="button" class="tool icon small" aria-label="Close" @onclick="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+            </button>
+        </div>
+        @if (sample is not null && sample.Has(cell.Tense))
+        {
+            <ConjugationTable Verb="sample" Tense="@cell.Tense"
+                              Highlight="@(cell.Row.IsPattern || cell.RegularHere ? null : cell.Forms.Select(f => f.Person).ToHashSet())"
+                              Caption="@(cell.Row.IsPattern ? $"Example: {sample.Inf}" : null)" />
+        }
+        @if (cell.Node is { } node)
+        {
+            <div class="vg-sheet-actions">
+                <button type="button" class="tool" @onclick="() => Open(node)">Open in the tree</button>
+                <button type="button" class="primary" @onclick="() => Practise(node)">Practise</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public VerbNode Tree { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbBook Book { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public EventCallback<VerbNode> OnOpen { get; set; }
+    [Parameter] public EventCallback<VerbNode> OnPractise { get; set; }
+
+    private static readonly GridLevel[] Levels =
+        [GridLevel.NotStarted, GridLevel.Weak, GridLevel.Learning, GridLevel.Good, GridLevel.Strong, GridLevel.Regular];
+
+    // Kept while the app is open, like your place in the tree.
+    private static VerbGrid? grid;
+    private static VerbNode? gridFor;
+    private static string search = "";
+    private static bool weakestFirst;
+
+    private GridCell? selected;
+
+    private VerbGrid Grid
+    {
+        get
+        {
+            if (grid is null || gridFor != Tree)
+            {
+                grid = new VerbGrid(Tree, Book);
+                gridFor = Tree;
+            }
+            return grid;
+        }
+    }
+
+    private bool Matches(GridRow row)
+    {
+        var q = AnswerCheck.StripAccents(search.Trim().ToLowerInvariant());
+        if (q.Length == 0) return true;
+        return AnswerCheck.StripAccents(row.Title.ToLowerInvariant()).Contains(q)
+               || row.Subtitle.ToLowerInvariant().Contains(q);
+    }
+
+    private List<GridRow> OrderedVerbs()
+    {
+        var rows = Grid.Verbs.Where(Matches);
+        return weakestFirst
+            ? rows.OrderBy(r => Grid.RowScore(r, Progress.VerbSkills)).ThenBy(r => r.Verb!.Rank).ToList()
+            : rows.OrderBy(r => r.Verb!.Rank).ToList();
+    }
+
+    private RenderFragment Row(GridRow row) => @<tr>
+        <th scope="row" class="vg-rowhead">
+            <span class="vg-inf" lang="@(row.IsPattern ? "en" : "es")">@row.Title</span>
+            <span class="vg-en">@row.Subtitle</span>
+        </th>
+        @foreach (var t in VerbGrammar.Tenses)
+        {
+            var cell = Grid.Cell(row, t.Id);
+            if (cell.Forms.Count == 0 && !cell.RegularHere)
+            {
+                <td><span class="vg-cell lvl-none" title="@($"{t.Name}: not used")"></span></td>
+            }
+            else
+            {
+                var level = VerbGrid.Level(cell, Progress.VerbSkills);
+                <td>
+                    <button type="button" class="vg-cell lvl-@level.ToString().ToLowerInvariant() @(selected == cell ? "sel" : "")"
+                            aria-label="@($"{row.Title}, {t.Name}: {VerbGrid.Label(level)}")" @onclick="() => selected = cell">@(level == GridLevel.Regular ? "·" : "")</button>
+                </td>
+            }
+        }
+    </tr>;
+
+    private void Close() => selected = null;
+
+    private Task Open(VerbNode node)
+    {
+        selected = null;
+        return OnOpen.InvokeAsync(node);
+    }
+
+    private Task Practise(VerbNode node)
+    {
+        selected = null;
+        return OnPractise.InvokeAsync(node);
+    }
+}

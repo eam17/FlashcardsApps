@@ -1,0 +1,29 @@
+@* What the colours in the conjugation tables mean. *@
+
+@if (Explained)
+{
+    <ul class="pt-key-long">
+        <li><span class="pt-sample pt-stem">habl</span><span><strong>Stem</strong>: the part that carries the meaning.</span></li>
+        <li><span class="pt-sample pt-end">amos</span><span><strong>Ending</strong>: the regular ending for the person and tense.</span></li>
+        <li><span class="pt-sample pt-chg">ie</span><span><strong>Changed</strong>: anything that isn't the plain pattern: a stem change, a spelling change, an unusual ending or a unique form.</span></li>
+        <li><span class="pt-sample pt-pron">me</span><span><strong>Pronoun</strong>: the <em lang="es">me, te, se, nos, os</em> of reflexive verbs.</span></li>
+        <li><span class="pt-sample pt-aux">he</span><span><strong>haber</strong>: the helper verb in compound tenses like <em lang="es">he hablado</em>.</span></li>
+    </ul>
+}
+else
+{
+    <div class="pt-key" aria-label="Colour key">
+        @foreach (var k in Kinds.Distinct().OrderBy(k => (int)k))
+        {
+            <span class="pt-key-item"><span class="pt-swatch @VerbParts.Css(k)" aria-hidden="true">Aa</span>@VerbParts.Label(k)</span>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>The kinds to list (short key under a table).</summary>
+    [Parameter] public IEnumerable<PartKind> Kinds { get; set; } = [];
+
+    /// <summary>Full key with explanations (top Rules page).</summary>
+    [Parameter] public bool Explained { get; set; }
+}

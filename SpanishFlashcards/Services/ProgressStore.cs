@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.JSInterop;
 using SpanishFlashcards.Models;
+using SpanishFlashcards.Models.Verbs;
 
 namespace SpanishFlashcards.Services;
 
@@ -35,6 +36,18 @@ public sealed class Progress
 
     /// <summary>Best scores per game id (e.g. "match-race").</summary>
     public Dictionary<string, int> GameBests { get; set; } = new();
+
+    /// <summary>Verbs tab: how well you know each form, keyed "verb|tense|person" (patterns as "~ar|pres|yo").</summary>
+    public Dictionary<string, VerbSkill> VerbSkills { get; set; } = new();
+
+    /// <summary>Verbs tab: whose turn it is among the regular verbs used to practise each pattern.</summary>
+    public Dictionary<string, int> VerbRotation { get; set; } = new();
+
+    /// <summary>Verbs tab: include vosotros forms in tables, practice and tests (Settings → Verbs).</summary>
+    public bool ShowVosotros { get; set; } = true;
+
+    /// <summary>Verbs tab: latest test result per tree item (keyed by item id, e.g. "t:pres/stem/o-ue").</summary>
+    public Dictionary<string, VerbTestRecord> VerbTests { get; set; } = new();
 
     /// <summary>Old format ("known"/"learning" per word). Converted to <see cref="Cards"/> on load.</summary>
     public Dictionary<string, string>? Status { get; set; }

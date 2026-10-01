@@ -57,6 +57,11 @@ window.palabras = {
         return Math.max(0, now - t.start - hidden);
     },
 
+    focusById: function (id) {
+        const el = document.getElementById(id);
+        if (el) el.focus({ preventScroll: true });
+    },
+
     speak: function (text, slow) {
         if (!window.palabras.canSpeak() || !text) return false;
         const synth = window.speechSynthesis;

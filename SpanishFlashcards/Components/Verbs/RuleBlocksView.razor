@@ -1,0 +1,131 @@
+@* The blocks of a Rules page. Folded sections render their own blocks with this same component. *@
+
+@foreach (var block in Blocks)
+{
+    @switch (block)
+    {
+        case RuleSummary s:
+            <div class="vr-summary">
+                <div class="vr-summary-label">In short</div>
+                <p>@RuleText.Render(s.Text)</p>
+            </div>
+            break;
+        case RuleHeading h:
+            <h3>@h.Text</h3>
+            break;
+        case RulePara p:
+            <p>@RuleText.Render(p.Text)</p>
+            break;
+        case RuleList l:
+            <ul>
+                @foreach (var item in l.Items)
+                {
+                    <li>@RuleText.Render(item)</li>
+                }
+            </ul>
+            break;
+        case RuleSection sec:
+            <details class="vr-section" open="@sec.Open">
+                <summary>@sec.Title</summary>
+                <div class="vr-section-body">
+                    <RuleBlocksView Blocks="sec.Blocks" />
+                </div>
+            </details>
+            break;
+        case RuleExamples ex:
+            <ul class="vr-examples">
+                @foreach (var (es, en) in ex.Items)
+                {
+                    <li><span lang="es">@RuleText.RenderExample(es)</span><span class="vr-en">@en</span></li>
+                }
+            </ul>
+            break;
+        case RuleChips c:
+            <div class="vr-chips">
+                <span class="vr-chips-label">@c.Label</span>
+                @foreach (var item in c.Items)
+                {
+                    <span class="vr-chip" lang="es">@item</span>
+                }
+            </div>
+            break;
+        case RuleTip tip:
+            <aside class="vr-tip">
+                <div class="vr-tip-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z" /></svg>
+                    @tip.Title
+                </div>
+                <p>@RuleText.Render(tip.Text)</p>
+            </aside>
+            break;
+        case RuleCompare cmp:
+            <div class="vr-compare">
+                <div class="vr-compare-title">@cmp.Title</div>
+                <div class="vr-compare-grid">
+                    <div class="vr-cmp-head">@cmp.Left</div>
+                    <div class="vr-cmp-head">@cmp.Right</div>
+                    @foreach (var (l, r) in cmp.Rows)
+                    {
+                        <div class="vr-cmp-cell">@RuleText.Render(l)</div>
+                        <div class="vr-cmp-cell">@RuleText.Render(r)</div>
+                    }
+                </div>
+            </div>
+            break;
+        case RuleRecipe rec:
+            <RuleRecipeView Recipe="rec" />
+            break;
+        case RuleEndings e:
+            <EndingsTable Tense="@e.Tense" Sample="e.Sample" />
+            break;
+        case RuleTable t:
+            <ConjugationTable Verb="t.Verb" Tense="@t.Tense" Highlight="t.Highlight" Caption="@t.Caption" />
+            break;
+        case RuleStoryLines stories:
+            <div class="st-quotes">
+                @foreach (var line in stories.Lines)
+                {
+                    <div class="st-quote">
+                        <StorySentenceView Sentence="line.Sentence" Book="Book" Highlight="line.Highlight" />
+                        <div class="st-en">@line.Sentence.En</div>
+                        <div class="st-from">@($"From \"{line.Story.Title}\" ({VerbGrammar.TenseById[line.Story.Tense].Name})")</div>
+                    </div>
+                }
+            </div>
+            break;
+        case RuleVsRegular cmpReg:
+            <div class="vr-vs">
+                <div class="vr-vs-title">@RuleText.Render(cmpReg.Title)</div>
+                <ul>
+                    @foreach (var line in cmpReg.Lines)
+                    {
+                        <li>@RuleText.Render(line)</li>
+                    }
+                </ul>
+            </div>
+            break;
+        case RuleColorKey:
+            <ColorKey Explained="true" />
+            break;
+        case RuleVerbs vs:
+            if (vs.Label.Length > 0)
+            {
+                <p class="vr-verbs-label">@vs.Label</p>
+            }
+            <div class="vr-verbs" lang="es">
+                @foreach (var v in vs.Verbs)
+                {
+                    <span class="vr-verb" title="@v.En">@v.Inf</span>
+                }
+            </div>
+            break;
+        case RuleCheck check:
+            <RuleCheckView Check="check" />
+            break;
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RuleBlock> Blocks { get; set; } = [];
+    [CascadingParameter] public VerbBook Book { get; set; } = default!;
+}

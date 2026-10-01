@@ -1,0 +1,314 @@
+@* Decode: going from a form you meet (tuve) back to the verb, who and when. Three parts: practice,
+   the endings cheat sheet, and the strange stems table. *@
+
+<div class="dc">
+    <div class="segmented dc-tabs" role="tablist" aria-label="Decode">
+        <button type="button" role="tab" class="seg @(section == Section.Practise ? "on" : "")" aria-selected="@(section == Section.Practise ? "true" : "false")" @onclick="() => section = Section.Practise">Practise</button>
+        <button type="button" role="tab" class="seg @(section == Section.Endings ? "on" : "")" aria-selected="@(section == Section.Endings ? "true" : "false")" @onclick="() => section = Section.Endings">Endings</button>
+        <button type="button" role="tab" class="seg @(section == Section.Stems ? "on" : "")" aria-selected="@(section == Section.Stems ? "true" : "false")" @onclick="() => section = Section.Stems">Strange stems</button>
+    </div>
+
+    @if (section == Section.Endings)
+    {
+        <p class="list-hint">Spanish packs who and when into the end of the verb. These signs work for almost every verb, even ones you don't know yet.</p>
+        @foreach (var sec in VerbDecode.Guide)
+        {
+            <section class="dc-guide">
+                <h3>@sec.Title</h3>
+                <p class="dc-guide-intro">@sec.Intro</p>
+                @foreach (var row in sec.Rows)
+                {
+                    <div class="dc-row">
+                        <div class="dc-signal" lang="es">@row.Signal</div>
+                        <div class="dc-meaning">@RuleText.Render(row.Meaning)</div>
+                        <div class="dc-examples">
+                            @foreach (var (inf, t, p) in row.Examples)
+                            {
+                                if (Book.ByInf.TryGetValue(inf, out var v) && v.Form(t, p) is { } f)
+                                {
+                                    <span class="dc-example"><FormParts Verb="v" Tense="@t" Person="p" Form="@f" /></span>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+    }
+    else if (section == Section.Stems)
+    {
+        <p class="list-hint">Forms that change so much you can't see the verb. Learn the stem once and every form with it falls into place.</p>
+        <button type="button" class="primary wide" @onclick="() => Start(strangeOnly: true)">Practise strange stems</button>
+        @foreach (var (title, stems) in VerbDecode.StrangeStems)
+        {
+            <section class="dc-guide">
+                <h3>@title</h3>
+                @foreach (var s in stems)
+                {
+                    <div class="dc-stem">
+                        <div class="dc-stem-top">
+                            <span class="dc-stem-label" lang="es">@s.Label</span>
+                            <span class="dc-arrow" aria-hidden="true">→</span>
+                            <span class="dc-stem-verb" lang="es">@(string.Join(" / ", s.Verbs))</span>
+                            <span class="dc-stem-tense">@(string.Join(", ", s.Tenses.Select(t => VerbGrammar.TenseById[t].Name.ToLowerInvariant())))</span>
+                        </div>
+                        <div class="dc-examples">
+                            @foreach (var (v, t, p, f) in Examples(s))
+                            {
+                                <span class="dc-example"><FormParts Verb="v" Tense="@t" Person="p" Form="@f" /></span>
+                            }
+                        </div>
+                        @if (s.Note is not null)
+                        {
+                            <div class="dc-note">@RuleText.Render(s.Note)</div>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    }
+    else if (round is null || round.Done)
+    {
+        @if (round is { Done: true } finished)
+        {
+            var right = finished.Results.Count(r => r.Grade == Grade.Right);
+            var half = finished.Results.Count(r => r.Grade == Grade.AccentSlip);
+            <div class="vp-done">
+                <div class="done-title">@(right == finished.Results.Count ? "¡Perfecto!" : right * 2 >= finished.Results.Count ? "¡Bien!" : "Sigue así")</div>
+                <p>@($"{right} of {finished.Results.Count} fully right" + (half > 0 ? $", {half} half right" : "") + ".")</p>
+            </div>
+            <div class="dc-results">
+                @foreach (var r in finished.Results)
+                {
+                    <div class="tst-answer @(r.Grade == Grade.Right ? "ok" : r.Grade == Grade.AccentSlip ? "meh" : "no")">
+                        <span class="tst-answer-a" lang="es"><FormParts Verb="r.Item.Verb" Tense="@r.Item.Tense" Person="r.Item.Person" Form="@r.Item.Form.ToLowerInvariant()" /></span>
+                        <span class="tst-answer-q">@ReadingText(r.Item)</span>
+                    </div>
+                }
+            </div>
+        }
+        <div class="vp-card dc-start">
+            <div class="vp-tense">Decode</div>
+            <p class="dc-start-text">You see (or hear) a verb form. Say which verb it is, who's doing it and when. Forms that don't look like their verb come up most.</p>
+            <div class="segmented" role="tablist" aria-label="How to show the form">
+                <button type="button" role="tab" class="seg @(mode == VerbDecode.Mode.Read ? "on" : "")" @onclick="() => mode = VerbDecode.Mode.Read">On its own</button>
+                <button type="button" role="tab" class="seg @(mode == VerbDecode.Mode.Sentence ? "on" : "")" @onclick="() => mode = VerbDecode.Mode.Sentence">In a sentence</button>
+                @if (CanSpeak && Speak is not null)
+                {
+                    <button type="button" role="tab" class="seg @(mode == VerbDecode.Mode.Listen ? "on" : "")" @onclick="() => mode = VerbDecode.Mode.Listen">Listen</button>
+                }
+            </div>
+            <label class="check-row">
+                <input type="checkbox" @bind="strangeOnly" />
+                <span>Strange stems only</span>
+            </label>
+            <button type="button" class="primary wide" @onclick="() => Start(strangeOnly)">@(round is null ? "Start" : "Another round")</button>
+            <p class="dc-count">@CountText()</p>
+        </div>
+    }
+    else if (round.Item is { } item)
+    {
+        var answered = round.Answered;
+        <div class="vp-progress" aria-label="@($"Form {round.PositionText}")">
+            <div class="vp-progress-fill" style="width: @(round.Index * 100 / round.Items.Count)%"></div>
+        </div>
+
+        <div class="vp-card dc-card">
+            <div class="vp-tense">@($"Decode · {round.PositionText}")</div>
+            @if (round.Mode == VerbDecode.Mode.Sentence && item.Sentence is not null)
+            {
+                <div class="dc-sentence"><StorySentenceView Sentence="item.Sentence" Book="Book" Highlight="@(new HashSet<int> { item.Token })" Plain="!answered" /></div>
+                @if (answered)
+                {
+                    <div class="st-en">@item.Sentence.En</div>
+                }
+            }
+            else if (round.Mode == VerbDecode.Mode.Listen && !answered)
+            {
+                <button type="button" class="dc-play" @onclick="() => Say(item)">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+                    Play again
+                </button>
+            }
+            else
+            {
+                <div class="dc-form" lang="es">
+                    @if (answered)
+                    {
+                        <FormParts Verb="item.Verb" Tense="@item.Tense" Person="item.Person" Form="@item.Display" />
+                    }
+                    else
+                    {
+                        @item.Display
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="dc-q">
+            <div class="dc-q-title">Which verb?</div>
+            <div class="dc-options">
+                @foreach (var v in round.VerbChoices)
+                {
+                    var inf = v.Inf;
+                    <button type="button" class="dc-opt @OptClass(round.Verb == inf, item.Readings.Any(r => r.Inf == inf), answered)" disabled="@answered"
+                            lang="es" @onclick="() => round.Verb = inf">@inf <span class="dc-opt-en" lang="en">@v.En</span></button>
+                }
+            </div>
+            <div class="dc-q-title">Who?</div>
+            <div class="dc-options">
+                @foreach (var (group, label) in VerbDecode.WhoOptions.Where(o => VerbSettings.Vosotros || o.Group != "vos"))
+                {
+                    var g = group;
+                    <button type="button" class="dc-opt @OptClass(round.Who == g, item.Readings.Any(r => r.Group == g), answered)" disabled="@answered"
+                            @onclick="() => round.Who = g">@label</button>
+                }
+            </div>
+            <div class="dc-q-title">When?</div>
+            <div class="dc-options">
+                @foreach (var t in round.WhenChoices)
+                {
+                    var tt = t;
+                    <button type="button" class="dc-opt @OptClass(round.When == tt, item.Readings.Any(r => r.Tense == tt), answered)" disabled="@answered"
+                            @onclick="() => round.When = tt">@VerbDecode.TenseLabel(tt)</button>
+                }
+            </div>
+        </div>
+
+        @if (!answered)
+        {
+            <button type="button" class="primary wide" disabled="@(!round.Ready)" @onclick="Check">Check</button>
+        }
+        else
+        {
+            <div class="game-feedback @(round.Grade == Grade.Right ? "ok" : round.Grade == Grade.AccentSlip ? "meh" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(round.Grade == Grade.Right ? "✓" : round.Grade == Grade.AccentSlip ? "~" : "✗")</span>
+                <span>
+                    <span class="fb-label">@(round.Grade == Grade.Right ? "Right." : round.Grade == Grade.AccentSlip ? "Half right." : "Not quite.")</span>
+                    <span lang="es"> @item.Display</span> = @ReadingText(item)
+                </span>
+            </div>
+            <ul class="dc-clues">
+                @foreach (var clue in VerbDecode.Clues(item))
+                {
+                    <li>@RuleText.Render(clue)</li>
+                }
+            </ul>
+            <div class="vp-next">
+                @if (CanSpeak && Speak is not null)
+                {
+                    <button type="button" class="speak-btn" aria-label="Say it" title="Say it" @onclick="() => Say(item)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></svg>
+                    </button>
+                }
+                <button type="button" class="primary wide" @onclick="Next">Continue</button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VerbBook Book { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    private enum Section { Practise, Endings, Stems }
+
+    // Kept while the app is open, like practice rounds.
+    private static Section section = Section.Practise;
+    private static VerbDecode? decode;
+    private static VerbBook? decodeFor;
+    private static DecodeRound? round;
+    private static VerbDecode.Mode mode = VerbDecode.Mode.Read;
+    private static bool strangeOnly;
+    private int spokenIndex = -1;
+
+    private VerbDecode Decode
+    {
+        get
+        {
+            if (decode is null || decodeFor != Book)
+            {
+                decode = new VerbDecode(Book);
+                decodeFor = Book;
+            }
+            return decode;
+        }
+    }
+
+    private void Start(bool strangeOnly)
+    {
+        DecodeView.strangeOnly = strangeOnly;
+        section = Section.Practise;
+        round = new DecodeRound(Decode, mode, strangeOnly, Progress);
+        spokenIndex = -1;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Listen mode: say each new form once when it appears.
+        if (section == Section.Practise && round is { Mode: VerbDecode.Mode.Listen, Item: { } item, Answered: false } r
+            && r.Index != spokenIndex && Speak is not null)
+        {
+            spokenIndex = r.Index;
+            await Speak(item.Display);
+        }
+    }
+
+    private Task Say(DecodeItem item) => Speak is null ? Task.CompletedTask : Speak(item.Display);
+
+    private async Task Check()
+    {
+        if (round is null || !round.Check()) return;
+        await OnSaved.InvokeAsync();
+    }
+
+    private void Next() => round?.Next();
+
+    private static string OptClass(bool chosen, bool correct, bool answered) =>
+        !answered ? (chosen ? "on" : "") : correct ? "right" : chosen ? "wrong" : "dim";
+
+    /// <summary>"tener · Preterite · yo", or several readings joined with "or".</summary>
+    private static string ReadingText(DecodeItem item) => string.Join(" or ",
+        item.Readings
+            .GroupBy(r => (r.Inf, r.Tense))
+            .Select(g => $"{g.Key.Inf} · {VerbGrammar.TenseById[g.Key.Tense].Name} · {string.Join(" / ", g.Select(r => WhoShort(r.Group)).Distinct())}"));
+
+    private static string WhoShort(string group) => group switch
+    {
+        "yo" => "yo", "tu" => "tú", "el" => "él / usted", "nos" => "nosotros", "vos" => "vosotros", _ => "ellos / ustedes",
+    };
+
+    private string CountText()
+    {
+        var seen = Progress.VerbSkills.Where(kv => kv.Key.StartsWith("dec:", StringComparison.Ordinal) && VerbSrs.IsSeen(kv.Value)).ToList();
+        if (seen.Count == 0) return "Nothing decoded yet.";
+        var strong = seen.Count(kv => kv.Value.Strength >= VerbSrs.Strong);
+        var due = seen.Count(kv => kv.Value.Due <= DateTime.UtcNow);
+        return $"{seen.Count} forms decoded so far · {strong} strong · {due} due";
+    }
+
+    /// <summary>Up to four real forms for a strange stem entry.</summary>
+    private IEnumerable<(Verb, string, int, string)> Examples(StrangeStem s)
+    {
+        var found = new List<(Verb, string, int, string)>();
+        foreach (var inf in s.Verbs)
+        {
+            if (!Book.ByInf.TryGetValue(inf, out var v)) continue;
+            foreach (var t in s.Tenses)
+            {
+                for (var p = 0; p < VerbGrammar.PersonsFor(t).Count; p++)
+                {
+                    if (found.Count >= 4) return found;
+                    if (!VerbSettings.IsActive(t, p) || v.Form(t, p) is not { } f) continue;
+                    if (VerbDecode.StemFor(v, t, f) != s || found.Any(x => x.Item4 == f)) continue;
+                    found.Add((v, t, p, f));
+                    if (VerbGrammar.TenseById[t].IsCompound) break; // one is enough for "he hecho"
+                }
+            }
+        }
+        return found;
+    }
+}

@@ -1,0 +1,55 @@
+@* A one-tap question at the end of a Rules page. *@
+
+<section class="vr-check" aria-label="Quick check">
+    <div class="vr-check-label">Quick check</div>
+    <p class="vr-check-q">@RuleText.Render(Check.Question)</p>
+    <div class="choices">
+        @foreach (var i in order)
+        {
+            var idx = i;
+            var text = Check.Options[idx];
+            if (picked is null)
+            {
+                <button type="button" class="choice @(Check.SpanishOptions ? "es" : "")" lang="@(Check.SpanishOptions ? "es" : "en")"
+                        @onclick="() => picked = idx">@text</button>
+            }
+            else
+            {
+                <div class="choice @(Check.SpanishOptions ? "es" : "") @(idx == Check.Answer ? "right" : idx == picked ? "wrong" : "dim")"
+                     lang="@(Check.SpanishOptions ? "es" : "en")">@text</div>
+            }
+        }
+    </div>
+    @if (picked is not null)
+    {
+        var ok = picked == Check.Answer;
+        <div class="vr-check-fb @(ok ? "ok" : "no")" role="status">
+            <strong>@(ok ? "Right." : "Not quite.")</strong> @RuleText.Render(Check.Explanation)
+        </div>
+        @if (!ok)
+        {
+            <button type="button" class="tool small" @onclick="Again">Try again</button>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RuleCheck Check { get; set; } = default!;
+
+    private int[] order = [];
+    private int? picked;
+    private string? shownFor;
+
+    protected override void OnParametersSet()
+    {
+        if (shownFor == Check.Question) return;
+        shownFor = Check.Question;
+        Again();
+    }
+
+    private void Again()
+    {
+        picked = null;
+        order = Enumerable.Range(0, Check.Options.Count).OrderBy(_ => Random.Shared.Next()).ToArray();
+    }
+}

@@ -1,0 +1,34 @@
+@* How a form is built: hablar → habl + o = hablo. *@
+
+<div class="vr-recipe" aria-label="How it's built">
+    @foreach (var line in Recipe.Lines)
+    {
+        <div class="vr-recipe-line">
+            @if (line.Label is not null)
+            {
+                <span class="vr-recipe-label">@line.Label</span>
+            }
+            <span class="vr-recipe-items">
+                @foreach (var item in line.Items)
+                {
+                    @switch (item)
+                    {
+                        case RecipeChip c:
+                            <span class="vr-piece @(c.Kind is { } k ? VerbParts.Css(k) : "plain")" lang="es">@c.Text</span>
+                            break;
+                        case RecipeOp op:
+                            <span class="vr-op" aria-hidden="true">@op.Text</span>
+                            break;
+                        case RecipeForm f:
+                            <span class="vr-result"><FormParts Verb="f.Verb" Tense="@f.Tense" Person="f.Person" Form="@f.Form" /></span>
+                            break;
+                    }
+                }
+            </span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RuleRecipe Recipe { get; set; } = default!;
+}
