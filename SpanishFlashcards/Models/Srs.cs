@@ -11,6 +11,9 @@ public sealed class CardState
 
     /// <summary>When the word was last answered (used to avoid showing it twice in a row).</summary>
     public DateTime? LastSeen { get; set; }
+
+    /// <summary>Marked as known from the To learn list: counts as learned and never comes back.</summary>
+    public bool Retired { get; set; }
 }
 
 /// <summary>
@@ -23,6 +26,9 @@ public sealed class CardState
 public static class Srs
 {
     public const int LearnedLevel = 4;
+
+    /// <summary>From this level on, the card shows English and you answer in Spanish.</summary>
+    public const int RecallLevel = 2;
     public const int MaxLevel = 5;
     private static readonly int[] IntervalDays = [0, 1, 3, 7, 14, 30];
 
@@ -32,7 +38,10 @@ public static class Srs
 
     public static bool IsNew(CardState? s) => s is null || s.Box == 0;
 
-    public static bool IsDue(CardState? s, DateOnly today) => s is { Box: > 0 } && s.Due <= today;
+    public static bool IsDue(CardState? s, DateOnly today) => s is { Box: > 0, Retired: false } && s.Due <= today;
+
+    /// <summary>Marked as known in the list: never shown again in Review or Practice.</summary>
+    public static bool IsRetired(CardState? s) => s is { Retired: true };
 
     public static bool IsLearned(CardState? s) => s is not null && s.Box >= LearnedLevel;
 
@@ -51,9 +60,20 @@ public static class Srs
     public static CardState Forgot(DateOnly today) =>
         new() { Box = 1, Due = today, LastSeen = DateTime.Now };
 
-    /// <summary>Used by "Mark learned" in the lists.</summary>
+    /// <summary>
+    /// "Still learning" on a card you've already seen: a card you were answering in Spanish drops
+    /// back to the first Spanish level (it stays a Spanish-answer card); otherwise back to level 1.
+    /// Either way it's due again today.
+    /// </summary>
+    public static CardState Forgot(CardState? before, DateOnly today) =>
+        new() { Box = before is { Box: >= RecallLevel } ? RecallLevel : 1, Due = today, LastSeen = DateTime.Now };
+
+    /// <summary>True when the card should show English and ask for the Spanish word.</summary>
+    public static bool AsksForSpanish(CardState? s) => s is not null && s.Box >= RecallLevel;
+
+    /// <summary>"Mark learned" in the To learn list: learned for good, never scheduled again.</summary>
     public static CardState MarkLearned(DateOnly today) =>
-        new() { Box = LearnedLevel, Due = today.AddDays(IntervalFor(LearnedLevel)), LastSeen = DateTime.Now };
+        new() { Box = MaxLevel, Due = DateOnly.MaxValue, LastSeen = DateTime.Now, Retired = true };
 
     public static string StageLabel(CardState? s) => s switch
     {
@@ -65,6 +85,7 @@ public static class Srs
     public static string DueLabel(CardState? s, DateOnly today)
     {
         if (IsNew(s)) return "not started";
+        if (IsRetired(s)) return "marked as known";
         var days = s!.Due.DayNumber - today.DayNumber;
         return days switch
         {

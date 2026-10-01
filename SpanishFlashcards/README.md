@@ -32,7 +32,10 @@ Upload the contents of `bin/Release/net10.0/publish/wwwroot` to any static host 
   - A word counts as **Learned** at level 4 (you've remembered it on schedule for about two weeks).
   - **Still learning** sends a card back to level 1; it comes up again the same day.
 - **Practice** lets you go through any cards, any time. Remembering a card that isn't due yet is practice only: its level doesn't change, so it doesn't count toward Learned.
-- **ES → EN / EN → ES** switches which side is shown first. English-first shows the meaning and the Spanish example with the word blanked out.
+- **Which way you answer depends on the level.** New and level-1 cards show the Spanish word – answer in English. From level 2 on, cards show the English and the Spanish example with the word blanked out – answer in Spanish. So a word only reaches **Learned** (level 4) after you've produced the Spanish on schedule.
+  - **Still learning** on a Spanish-answer card drops it to level 2 (you keep answering in Spanish); on an English-answer card it drops to level 1.
+  - In **Practice**, the direction button cycles **Auto** (follow the level) → **ES → EN** → **EN → ES**.
+- **Mark learned** in the To learn list is for words you already know: the word counts as learned and **never comes back** in Review or Practice. **Relearn** in the Learned list brings it back (at level 2, answering in Spanish).
 - The speaker buttons read the word and sentence aloud with your device's Spanish voice (if it has one).
 - Nouns show their article with a colour: teal = masculine (el), pink = feminine (la), purple = either. Verbs show present (yo / tú / él) and past forms on the answer side.
 - Pick a group from the dropdown: frequency groups of 100, or topics (food, travel, family…).

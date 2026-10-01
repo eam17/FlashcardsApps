@@ -80,12 +80,12 @@ else
                         <button type="button" class="seg @(mode == Mode.Practice ? "on" : "")" aria-pressed="@(mode == Mode.Practice ? "true" : "false")" @onclick="() => SetMode(Mode.Practice)">Practice</button>
                     </div>
                     <div class="study-tools">
-                        <button type="button" class="tool" @onclick="ToggleDirection"
-                                aria-label="@(progress.EnglishFirst ? "English shown first. Switch to Spanish first." : "Spanish shown first. Switch to English first.")">
-                            @(progress.EnglishFirst ? "EN → ES" : "ES → EN")
-                        </button>
                         @if (mode == Mode.Practice)
                         {
+                            <button type="button" class="tool" @onclick="CyclePracticeDirection"
+                                    aria-label="@PracticeDirectionAria">
+                                @PracticeDirectionLabel
+                            </button>
                             <button type="button" class="tool icon" aria-label="Shuffle cards" @onclick="Shuffle">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5" /><path d="M4 20 21 3" /><path d="M21 16v5h-5" /><path d="m15 15 6 6" /><path d="M4 4l5 5" /></svg>
                             </button>
@@ -107,7 +107,8 @@ else
                 @if (card is not null)
                 {
                     var state = State(card);
-                    var spanishVisible = flipped || !progress.EnglishFirst;
+                    var englishFirst = EnglishFirstFor(state);
+                    var spanishVisible = flipped || !englishFirst;
                     var cloze = card.ClozeParts;
 
                     <div class="study">
@@ -125,7 +126,12 @@ else
                                 </div>
                                 <div class="card-status">@CardStatus(state)</div>
 
-                                @if (!flipped && progress.EnglishFirst)
+                                @if (!flipped)
+                                {
+                                    <div class="card-ask">@(englishFirst ? "Answer in Spanish" : "Answer in English")</div>
+                                }
+
+                                @if (!flipped && englishFirst)
                                 {
                                     @* English first: meaning + Spanish sentence with the word blanked *@
                                     <div class="card-word en">@card.En</div>
@@ -245,8 +251,8 @@ else
 
                     <p class="list-hint">
                         @(isLearnedTab
-                            ? "A word counts as learned once you've remembered it on time up to level 4 (about two weeks of reviews). Tap Relearn to send it back."
-                            : "Words move up a level each time you remember them when they're due.")
+                            ? "Words land here after you answer them in Spanish on schedule up to level 4, or when you tap Mark learned (those never come back). Tap Relearn to practice a word again."
+                            : "New words start as Spanish → English. At level 2 they switch: you see the English and answer in Spanish.")
                     </p>
 
                     @if (items.Count == 0)
@@ -271,7 +277,7 @@ else
                                             <span class="row-word @w.GenderClass">@w.Es</span>
                                             <span class="badge @BadgeClass(State(w))">@Srs.StageLabel(State(w))</span>
                                         </div>
-                                        <div class="row-sub">@w.En · @Srs.DueLabel(State(w), today)</div>
+                                        <div class="row-sub">@w.En · @Srs.DueLabel(State(w), today)@(Srs.IsNew(State(w)) || Srs.IsRetired(State(w)) ? "" : Srs.AsksForSpanish(State(w)) ? " · answer in Spanish" : " · answer in English")</div>
                                     </div>
                                     <button type="button" class="tool"
                                             aria-label="@(isLearnedTab ? $"Move back to learn: {w.Es}" : $"Mark as learned: {w.Es}")"
@@ -415,6 +421,7 @@ else
     /// <summary>Every card in the group, in shuffled (or frequency) order.</summary>
     private List<Word> PracticeQueue(List<Word> groupWords)
     {
+        groupWords = groupWords.Where(w => !Srs.IsRetired(State(w))).ToList(); // marked-as-known words never come back
         if (progress.Order is null) return groupWords;
         var pos = new Dictionary<string, int>();
         for (var i = 0; i < progress.Order.Count; i++) pos[progress.Order[i]] = i;
@@ -434,7 +441,7 @@ else
 
     private DateOnly? NextDueIn(List<Word> groupWords)
     {
-        var dates = groupWords.Select(State).Where(s => s is { Box: > 0 }).Select(s => s!.Due).ToList();
+        var dates = groupWords.Select(State).Where(s => s is { Box: > 0, Retired: false }).Select(s => s!.Due).ToList();
         return dates.Count == 0 ? null : dates.Min();
     }
 
@@ -448,10 +455,36 @@ else
     private string CardAria(Word w)
     {
         if (flipped) return $"Answer: {w.SpanishWithArticle}, {w.En}. Tap to flip back.";
-        return progress.EnglishFirst
-            ? $"English: {w.En}. Tap to reveal the Spanish word."
-            : $"Spanish: {w.SpanishWithArticle}. Tap to reveal the meaning.";
+        return EnglishFirstFor(State(w))
+            ? $"English: {w.En}. Answer in Spanish, then tap to check."
+            : $"Spanish: {w.SpanishWithArticle}. Answer in English, then tap to check.";
     }
+
+    /// <summary>
+    /// Which side a card shows first. Normally it follows the card's level: new and level-1 cards
+    /// show Spanish (answer in English); from level 2 they show English (answer in Spanish).
+    /// Practice mode can override this.
+    /// </summary>
+    private bool EnglishFirstFor(CardState? s)
+    {
+        if (mode == Mode.Practice && progress.PracticeDirection == "en") return true;
+        if (mode == Mode.Practice && progress.PracticeDirection == "es") return false;
+        return Srs.AsksForSpanish(s);
+    }
+
+    private string PracticeDirectionLabel => progress.PracticeDirection switch
+    {
+        "es" => "ES → EN",
+        "en" => "EN → ES",
+        _ => "Auto",
+    };
+
+    private string PracticeDirectionAria => progress.PracticeDirection switch
+    {
+        "es" => "Practice shows Spanish first. Tap to show English first.",
+        "en" => "Practice shows English first. Tap to follow each card's level.",
+        _ => "Practice follows each card's level. Tap to always show Spanish first.",
+    };
 
     private static string BadgeClass(CardState? s) =>
         Srs.IsLearned(s) ? "known" : Srs.IsNew(s) ? "new" : "learning";
@@ -495,9 +528,14 @@ else
         await OnGroupChanged();
     }
 
-    private async Task ToggleDirection()
+    private async Task CyclePracticeDirection()
     {
-        progress.EnglishFirst = !progress.EnglishFirst;
+        progress.PracticeDirection = progress.PracticeDirection switch
+        {
+            "auto" => "es",
+            "es" => "en",
+            _ => "auto",
+        };
         flipped = false;
         await Store.SaveAsync(progress);
     }
@@ -525,7 +563,9 @@ else
             progress.Cards[card.Es] = next;
             notice = Srs.IsLearned(next) && !Srs.IsLearned(before)
                 ? $"“{card.Es}” is now learned! Next review {Srs.DueLabel(next, today)}."
-                : $"Level {next.Box}. Next review {Srs.DueLabel(next, today)}.";
+                : Srs.AsksForSpanish(next) && !Srs.AsksForSpanish(before)
+                    ? $"Level {next.Box}: from now on you'll see the English and answer in Spanish. Next review {Srs.DueLabel(next, today)}."
+                    : $"Level {next.Box}. Next review {Srs.DueLabel(next, today)}.";
         }
         AfterAnswer(card);
         await Store.SaveAsync(progress);
@@ -534,8 +574,11 @@ else
     private async Task AnswerForgot(Word card)
     {
         today = Srs.Today;
-        progress.Cards[card.Es] = Srs.Forgot(today);
-        notice = $"“{card.Es}” is back to level 1 and will come up again today.";
+        var next = Srs.Forgot(State(card), today);
+        progress.Cards[card.Es] = next;
+        notice = Srs.AsksForSpanish(next)
+            ? $"“{card.Es}” is back to level {next.Box} (still answering in Spanish) and will come up again today."
+            : $"“{card.Es}” is back to level 1 and will come up again today.";
         AfterAnswer(card);
         await Store.SaveAsync(progress);
     }
@@ -551,7 +594,7 @@ else
     private async Task Move(Word w, bool fromLearned)
     {
         today = Srs.Today;
-        progress.Cards[w.Es] = fromLearned ? Srs.Forgot(today) : Srs.MarkLearned(today);
+        progress.Cards[w.Es] = fromLearned ? Srs.Forgot(State(w), today) : Srs.MarkLearned(today);
         await Store.SaveAsync(progress);
     }
 

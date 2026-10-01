@@ -13,7 +13,8 @@ public sealed class Progress
     /// <summary>Shuffled card order for practice mode (null = frequency order).</summary>
     public List<string>? Order { get; set; }
 
-    public bool EnglishFirst { get; set; }
+    /// <summary>Practice mode only: "auto" (follow the card's level), "es" (Spanish first) or "en" (English first).</summary>
+    public string PracticeDirection { get; set; } = "auto";
 
     public string? Group { get; set; }
 

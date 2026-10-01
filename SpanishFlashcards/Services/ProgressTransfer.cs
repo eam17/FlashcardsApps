@@ -26,6 +26,9 @@ public sealed class ExportCard
 {
     public int Level { get; set; }
     public DateOnly Due { get; set; }
+
+    /// <summary>Marked as known: never comes back for review.</summary>
+    public bool Retired { get; set; }
 }
 
 public sealed record ImportResult(Dictionary<string, CardState> Cards, int Learned, int Learning, int Unknown);
@@ -52,7 +55,7 @@ public static class ProgressTransfer
             else if (!Srs.IsNew(s)) export.StillLearning.Add(w.Es);
             else export.NotStarted.Add(w.Es);
 
-            if (!Srs.IsNew(s)) export.Schedule[w.Es] = new ExportCard { Level = s!.Box, Due = s.Due };
+            if (!Srs.IsNew(s)) export.Schedule[w.Es] = new ExportCard { Level = s!.Box, Due = s.Due, Retired = s.Retired };
         }
         return JsonSerializer.Serialize(export, JsonOptions);
     }
@@ -73,7 +76,7 @@ public static class ProgressTransfer
               .Append(Csv(w.Topic)).Append(',')
               .Append(status).Append(',')
               .Append(s?.Box ?? 0).Append(',')
-              .Append(Srs.IsNew(s) ? "" : s!.Due.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+              .Append(Srs.IsNew(s) ? "" : Srs.IsRetired(s) ? "never" : s!.Due.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
               .AppendLine();
         }
         return sb.ToString();
@@ -129,7 +132,9 @@ public static class ProgressTransfer
         if (data.Schedule is { Count: > 0 })
         {
             foreach (var (w, c) in data.Schedule)
-                result.Add((w, new CardState { Box = Math.Clamp(c.Level, 0, Srs.MaxLevel), Due = c.Due }));
+                result.Add((w, c.Retired
+                    ? Srs.MarkLearned(today)
+                    : new CardState { Box = Math.Clamp(c.Level, 0, Srs.MaxLevel), Due = c.Due }));
             return result;
         }
 
@@ -164,6 +169,11 @@ public static class ProgressTransfer
             if (levelCol >= 0 && levelCol < row.Count && int.TryParse(row[levelCol].Trim(), out var level))
             {
                 if (level <= 0) { result.Add((word, null)); continue; }
+                if (dueCol >= 0 && dueCol < row.Count && row[dueCol].Trim().Equals("never", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add((word, Srs.MarkLearned(today)));
+                    continue;
+                }
                 var due = today;
                 if (dueCol >= 0 && dueCol < row.Count &&
                     DateOnly.TryParseExact(row[dueCol].Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))

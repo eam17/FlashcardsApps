@@ -197,6 +197,7 @@ h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 32px; 
 .card-example mark { background: #FDEBC4; color: var(--ink); border-radius: 4px; padding: 0 3px; font-style: normal; font-weight: 700; }
 .blank { display: inline-block; min-width: 3.5em; border-bottom: 2px solid var(--ink); color: transparent; font-style: normal; }
 .card-hint { font-size: 14px; color: var(--muted); }
+.card-ask { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
 .card-sub { font-size: 15px; color: var(--muted); }
 .conj { margin-top: 4px; padding: 10px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); font-size: 14px; text-align: left; display: flex; flex-direction: column; gap: 4px; }
 .conj-label { display: inline-block; min-width: 58px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
