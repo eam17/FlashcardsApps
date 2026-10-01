@@ -1,23 +1,22 @@
-@* The Games area: a list of games, and the selected game. Add new games to the Games list below. *@
+@* The Games area: a list of games, and the selected game. To add a game: create its component in this
+   folder, add a GameInfo line to Games below, and a case in the switch. *@
 
 @if (selected is null)
 {
     <div class="games">
         <p class="list-hint">
-            Games use words from <strong>@GroupLabel</strong> (change it with the picker above).
-            They're for fun and practice: they don't change your review levels.
+            Games use words from <strong>@GroupLabel</strong> (change it with the picker above). Tricky words and
+            words you're learning come up most, with an easy one now and then. Games don't change your review levels.
         </p>
 
         @foreach (var g in Games)
         {
             <button type="button" class="game-card" @onclick="() => Open(g.Id)">
-                <span class="game-icon" aria-hidden="true">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></svg>
-                </span>
+                <span class="game-icon" aria-hidden="true">@g.Icon</span>
                 <span class="game-text">
                     <span class="game-title">@g.Title</span>
                     <span class="game-desc">@g.Description</span>
-                    <span class="game-best">Best: @BestFor(g.Id)</span>
+                    <span class="game-best">Best: @BestFor(g.Id)@g.BestSuffix</span>
                 </span>
             </button>
         }
@@ -31,23 +30,53 @@ else
             All games
         </button>
 
-        @if (selected == MatchRaceId)
+        @switch (selected)
         {
-            <MatchRace AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
-                       Best="BestFor(MatchRaceId)" OnFinished="score => SaveScore(MatchRaceId, score)" />
+            case "match-race":
+                <MatchRace AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
+                           Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "gender-sort":
+                <GenderSort AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
+                            Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "true-false":
+                <TrueFalse AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
+                           Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "listen":
+                <ListenTap AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf" CanSpeak="CanSpeak" Speak="Speak"
+                           Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "fill-in":
+                <FillIn AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
+                        Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "word-builder":
+                <WordBuilder AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
+                             Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
         }
     </div>
 }
 
 @code {
-    private const string MatchRaceId = "match-race";
-
-    private sealed record GameInfo(string Id, string Title, string Description);
+    private sealed record GameInfo(string Id, string Title, string Description, string Icon, string BestSuffix = "");
 
     private static readonly List<GameInfo> Games =
     [
-        new(MatchRaceId, "Match race",
-            "Match Spanish to English as fast as you can in 60 seconds. Words you've seen but don't know yet come up most."),
+        new("match-race", "Match race",
+            "Match Spanish to English against the clock (60 s). Wrong pairs cost 3 seconds.", "⇄"),
+        new("gender-sort", "Gender sort",
+            "A noun appears – tap el or la as fast as you can (60 s).", "el/la"),
+        new("true-false", "True or false",
+            "Does the Spanish word match the English? Quick yes/no blitz (60 s).", "✓✗"),
+        new("listen", "Listen and tap",
+            "Hear a Spanish word and pick its meaning. 10 words, no reading.", "♪", " / 10"),
+        new("fill-in", "Fill the gap",
+            "A Spanish sentence with a missing word, 4 Spanish options, no English (60 s).", "_ _"),
+        new("word-builder", "Word builder",
+            "See the English, tap the scrambled letters to spell the Spanish. 8 words.", "abc", " / 24"),
     ];
 
     [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
@@ -56,6 +85,8 @@ else
     [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
     [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
     [Parameter] public EventCallback OnProgressChanged { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
 
     private string? selected;
 

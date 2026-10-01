@@ -1,0 +1,169 @@
+@* Word builder: see the English, tap the scrambled letters to spell the Spanish word. Rounds of 8. *@
+
+@if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">Word builder</div>
+        <p>You see the English meaning. Tap the scrambled letters in order to spell the Spanish word – accents count!
+           <strong>8 words</strong> per round: 3 points with no mistakes, 2 with one, 1 otherwise.</p>
+        <p class="small">Best score: @Best / @(Rounds * 3)</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && word is not null)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score">@score points</div>
+            <div class="race-time">@(index + 1) / @Rounds</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill" style="width: @(index * 100 / Rounds)%"></div></div>
+
+        <div class="game-prompt">
+            <div class="game-word en">@word.En</div>
+            <div class="game-sub">
+                @word.Pos
+                @if (word.IsNoun)
+                {
+                    <span> · <span class="art-chip small @word.GenderClass">@word.Article</span></span>
+                }
+            </div>
+        </div>
+
+        <div class="spell-slots" aria-live="polite" aria-label="Your spelling so far">
+            @for (var i = 0; i < target.Length; i++)
+            {
+                var ch = i < typed.Length ? typed[i].ToString() : "";
+                <span class="spell-slot @(i < typed.Length ? "filled" : "") @(done && !solved ? "missed" : "")">@(done ? target[i].ToString() : ch)</span>
+            }
+        </div>
+
+        @if (!done)
+        {
+            <div class="spell-tiles">
+                @for (var t = 0; t < tiles.Count; t++)
+                {
+                    var ti = t;
+                    <button type="button" class="spell-tile @(shakeTile == ti ? "bad" : "")" disabled="@used[ti]"
+                            @onclick="() => Tap(ti)">@tiles[ti]</button>
+                }
+            </div>
+            <button type="button" class="skip-link" @onclick="GiveUp">Show me</button>
+        }
+        else
+        {
+            <div class="game-feedback @(solved && wordMistakes == 0 ? "ok" : "no")">
+                <span>@(solved ? $"+{PointsFor(wordMistakes)} {(PointsFor(wordMistakes) == 1 ? "point" : "points")}" : "No points")</span>
+                <span>@word.Example</span>
+            </div>
+            <button type="button" class="primary wide" @onclick="Next">@(index + 1 == Rounds ? "See results" : "Next word")</button>
+        }
+    </div>
+}
+else
+{
+    <GameResults Headline="@($"{score} points")" Score="score" PreviousBest="previousBest" Best="Best"
+                 Mistakes="mistakes" OnPlayAgain="Start" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private const int Rounds = 8;
+
+    [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+
+    private Phase phase = Phase.Ready;
+    private WordDealer? dealer;
+    private Word? word;
+    private string target = "";
+    private string typed = "";
+    private List<string> tiles = new();
+    private bool[] used = Array.Empty<bool>();
+    private int? shakeTile;
+    private bool done, solved;
+    private int index, score, wordMistakes, previousBest;
+    private readonly List<Word> mistakes = new();
+
+    /// <summary>Single words of 3–10 letters (no spaces or slashes).</summary>
+    private static bool Fits(Word w) =>
+        w.Es.Length is >= 3 and <= 10 && w.Es.All(char.IsLetter);
+
+    private static int PointsFor(int mistakesInWord) => mistakesInWord switch { 0 => 3, 1 => 2, _ => 1 };
+
+    private void Start()
+    {
+        dealer = new WordDealer(GamePicker.Pool(GroupWords, AllWords, StateOf, Fits), StateOf, 12);
+        index = score = 0;
+        previousBest = Best;
+        mistakes.Clear();
+        phase = Phase.Playing;
+        Deal();
+    }
+
+    private void Deal()
+    {
+        word = dealer!.Next();
+        if (word is null) return;
+        target = word.Es.ToLowerInvariant();
+        typed = "";
+        done = solved = false;
+        wordMistakes = 0;
+        shakeTile = null;
+
+        var letters = target.Select(c => c.ToString()).ToList();
+        // Shuffle until the tiles don't already spell the word.
+        for (var tries = 0; tries < 10; tries++)
+        {
+            letters = letters.OrderBy(_ => Random.Shared.Next()).ToList();
+            if (string.Concat(letters) != target) break;
+        }
+        tiles = letters;
+        used = new bool[tiles.Count];
+    }
+
+    private void Tap(int t)
+    {
+        if (done || used[t]) return;
+        var needed = target[typed.Length].ToString();
+        if (tiles[t] == needed)
+        {
+            used[t] = true;
+            typed += needed;
+            shakeTile = null;
+            if (typed.Length == target.Length)
+            {
+                done = solved = true;
+                score += PointsFor(wordMistakes);
+                if (wordMistakes > 0 && !mistakes.Contains(word!)) mistakes.Add(word!);
+            }
+        }
+        else
+        {
+            wordMistakes++;
+            shakeTile = t;
+        }
+    }
+
+    private void GiveUp()
+    {
+        done = true;
+        solved = false;
+        if (!mistakes.Contains(word!)) mistakes.Add(word!);
+    }
+
+    private async Task Next()
+    {
+        index++;
+        if (index >= Rounds)
+        {
+            phase = Phase.Done;
+            await OnFinished.InvokeAsync(score);
+            return;
+        }
+        Deal();
+    }
+}

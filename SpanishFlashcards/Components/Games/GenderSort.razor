@@ -1,0 +1,109 @@
+@* Gender sort: a noun appears, tap el or la. 60 seconds; a wrong answer costs 3 seconds. *@
+@implements IDisposable
+
+@if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">Gender sort</div>
+        <p>A noun appears without its article. Tap <strong>el</strong> or <strong>la</strong>.
+           You have <strong>60 seconds</strong>; every wrong answer costs <strong>3 seconds</strong>.</p>
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && current is not null)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score right @(streak >= 3 ? $"· {streak} in a row" : "")</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="game-prompt">
+            <div class="game-word">@current.Es</div>
+            <div class="game-sub">@current.En</div>
+        </div>
+
+        <div class="game-feedback @(lastRight ? "ok" : "no")" aria-live="polite">
+            @if (last is not null)
+            {
+                <span class="art-chip small @last.GenderClass">@last.Article</span>
+                <span class="row-word @last.GenderClass">@last.Es</span>
+                <span>@(lastRight ? "✓" : "✗")</span>
+            }
+        </div>
+
+        <div class="big-choices">
+            <button type="button" class="big-choice g-m" @onclick="@(() => Answer("el"))">el</button>
+            <button type="button" class="big-choice g-f" @onclick="@(() => Answer("la"))">la</button>
+        </div>
+    </div>
+}
+else
+{
+    <GameResults Headline="@($"{score} right")" Score="score" PreviousBest="previousBest" Best="Best"
+                 Mistakes="mistakes" OnPlayAgain="Start" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+
+    [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private WordDealer? dealer;
+    private Word? current, last;
+    private bool lastRight;
+    private int score, streak, previousBest;
+    private readonly List<Word> mistakes = new();
+
+    // Only plain el/la nouns (no "el / la" words or plurals like "las vacaciones").
+    private static bool Fits(Word w) => w.IsNoun && w.Article is "el" or "la";
+
+    private void Start()
+    {
+        var pool = GamePicker.Pool(GroupWords, AllWords, StateOf, Fits);
+        dealer = new WordDealer(pool, StateOf);
+        score = streak = 0;
+        previousBest = Best;
+        mistakes.Clear();
+        last = null;
+        current = dealer.Next();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    private void Answer(string article)
+    {
+        if (current is null || phase != Phase.Playing) return;
+        lastRight = current.Article == article;
+        if (lastRight)
+        {
+            score++;
+            streak++;
+        }
+        else
+        {
+            streak = 0;
+            clock.Penalty(3);
+            if (!mistakes.Contains(current)) mistakes.Add(current);
+        }
+        last = current;
+        current = dealer!.Next();
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

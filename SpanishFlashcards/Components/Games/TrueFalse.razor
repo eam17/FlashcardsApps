@@ -1,0 +1,121 @@
+@* True or false blitz: does the Spanish word match the English? 60 seconds; a wrong answer costs 3 seconds. *@
+@implements IDisposable
+
+@if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">True or false</div>
+        <p>A Spanish word and an English meaning appear. Tap <strong>Match</strong> if they go together,
+           <strong>No match</strong> if they don't. <strong>60 seconds</strong>; every wrong answer costs <strong>3 seconds</strong>.</p>
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && word is not null)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score right @(streak >= 3 ? $"· {streak} in a row" : "")</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="game-prompt">
+            <div class="game-word">@word.Es</div>
+            <div class="game-equals" aria-hidden="true">=</div>
+            <div class="game-word en">@shownEnglish</div>
+        </div>
+
+        <div class="game-feedback @(lastRight ? "ok" : "no")" aria-live="polite">
+            @if (last is not null)
+            {
+                <span>@(lastRight ? "✓" : "✗")</span>
+                <span><strong>@last.Es</strong> = @last.En</span>
+            }
+        </div>
+
+        <div class="big-choices">
+            <button type="button" class="big-choice no" @onclick="@(() => Answer(false))">✗ No match</button>
+            <button type="button" class="big-choice yes" @onclick="@(() => Answer(true))">✓ Match</button>
+        </div>
+    </div>
+}
+else
+{
+    <GameResults Headline="@($"{score} right")" Score="score" PreviousBest="previousBest" Best="Best"
+                 Mistakes="mistakes" OnPlayAgain="Start" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+
+    [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private WordDealer? dealer;
+    private Word? word, last;
+    private string shownEnglish = "";
+    private bool isMatch, lastRight;
+    private int score, streak, previousBest;
+    private readonly List<Word> mistakes = new();
+
+    private void Start()
+    {
+        dealer = new WordDealer(GamePicker.Pool(GroupWords, AllWords, StateOf), StateOf);
+        score = streak = 0;
+        previousBest = Best;
+        mistakes.Clear();
+        last = null;
+        Deal();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    /// <summary>Half the time the real meaning, otherwise a believable wrong one (same kind of word).</summary>
+    private void Deal()
+    {
+        word = dealer!.Next();
+        if (word is null) return;
+        isMatch = Random.Shared.Next(2) == 0;
+        if (!isMatch)
+        {
+            var wrong = GamePicker.Distractors(word, AllWords, 1).FirstOrDefault();
+            if (wrong is null) isMatch = true;
+            else shownEnglish = wrong.En;
+        }
+        if (isMatch) shownEnglish = word.En;
+    }
+
+    private void Answer(bool saysMatch)
+    {
+        if (word is null || phase != Phase.Playing) return;
+        lastRight = saysMatch == isMatch;
+        if (lastRight)
+        {
+            score++;
+            streak++;
+        }
+        else
+        {
+            streak = 0;
+            clock.Penalty(3);
+            if (!mistakes.Contains(word)) mistakes.Add(word);
+        }
+        last = word;
+        Deal();
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

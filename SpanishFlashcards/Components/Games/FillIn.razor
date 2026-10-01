@@ -1,0 +1,120 @@
+@* Sentence fill-in: a Spanish sentence with a gap and 4 Spanish words – no English. 60 seconds; a wrong answer costs 3 seconds. *@
+@implements IDisposable
+
+@if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">Fill the gap</div>
+        <p>A Spanish sentence with a missing word – no English to help. Tap the word that fits.
+           <strong>60 seconds</strong>; every wrong answer costs <strong>3 seconds</strong>.</p>
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && word is not null)
+{
+    var cz = word.ClozeParts!.Value;
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score right @(streak >= 3 ? $"· {streak} in a row" : "")</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="game-prompt">
+            <div class="game-sentence">@(cz.Before)<span class="blank">_____</span>@(cz.After)</div>
+            <div class="game-sub">The missing word may be in another form (for example a conjugated verb) – pick its dictionary form.</div>
+        </div>
+
+        <div class="game-feedback @(lastRight ? "ok" : "no")" aria-live="polite">
+            @if (last is not null)
+            {
+                <span>@(lastRight ? "✓" : "✗")</span>
+                <span>@last.Example</span>
+            }
+        </div>
+
+        <div class="choices">
+            @foreach (var opt in options)
+            {
+                <button type="button" class="choice es" @onclick="() => Answer(opt)">@opt.Es</button>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <GameResults Headline="@($"{score} right")" Score="score" PreviousBest="previousBest" Best="Best"
+                 Mistakes="mistakes" OnPlayAgain="Start" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+
+    [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private WordDealer? dealer;
+    private Word? word, last;
+    private List<Word> options = new();
+    private bool lastRight;
+    private int score, streak, previousBest;
+    private readonly List<Word> mistakes = new();
+
+    private static bool Fits(Word w) => w.ClozeParts is not null;
+
+    private void Start()
+    {
+        dealer = new WordDealer(GamePicker.Pool(GroupWords, AllWords, StateOf, Fits), StateOf);
+        score = streak = 0;
+        previousBest = Best;
+        mistakes.Clear();
+        last = null;
+        Deal();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    private void Deal()
+    {
+        word = dealer!.Next();
+        if (word is null) return;
+        options = GamePicker.Distractors(word, AllWords, 3, sameArticle: true)
+            .Append(word)
+            .OrderBy(_ => Random.Shared.Next())
+            .ToList();
+    }
+
+    private void Answer(Word opt)
+    {
+        if (word is null || phase != Phase.Playing) return;
+        lastRight = opt == word;
+        if (lastRight)
+        {
+            score++;
+            streak++;
+        }
+        else
+        {
+            streak = 0;
+            clock.Penalty(3);
+            if (!mistakes.Contains(word)) mistakes.Add(word);
+        }
+        last = word;
+        Deal();
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

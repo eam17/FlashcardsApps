@@ -1,0 +1,131 @@
+@* Listen and tap: hear a Spanish word, pick its meaning from 4. Rounds of 10. *@
+
+@if (!CanSpeak)
+{
+    <div class="race-intro">
+        <div class="race-title">Listen and tap</div>
+        <p>This game needs your device's Spanish voice, and this browser doesn't offer speech.
+           Try the app in Safari (iPhone) or Chrome (Android).</p>
+    </div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">Listen and tap</div>
+        <p>You'll hear a Spanish word. Tap its meaning. <strong>10 words</strong> per round – no reading, just listening.
+           Tap the speaker to hear it again.</p>
+        <p class="small">Best score: @Best / @Rounds</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && word is not null)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score">@score right</div>
+            <div class="race-time">@(index + 1) / @Rounds</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill" style="width: @(index * 100 / Rounds)%"></div></div>
+
+        <div class="game-prompt">
+            <button type="button" class="listen-btn" aria-label="Play the word again" @onclick="SayIt">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+            </button>
+            @if (answered is not null)
+            {
+                <div class="game-word">@word.Es</div>
+            }
+            else
+            {
+                <div class="game-sub">Tap to hear it again</div>
+            }
+        </div>
+
+        <div class="choices">
+            @foreach (var opt in options)
+            {
+                if (answered is null)
+                {
+                    <button type="button" class="choice" @onclick="() => Pick(opt)">@opt.En</button>
+                }
+                else
+                {
+                    <div class="choice @(opt == word ? "right" : opt == answered ? "wrong" : "dim")">@opt.En</div>
+                }
+            }
+        </div>
+        @if (answered is not null)
+        {
+            <button type="button" class="primary wide" @onclick="Next">@(index + 1 == Rounds ? "See results" : "Next word")</button>
+        }
+    </div>
+}
+else
+{
+    <GameResults Headline="@($"{score} / {Rounds} right")" Score="score" PreviousBest="previousBest" Best="Best"
+                 Mistakes="mistakes" OnPlayAgain="Start" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private const int Rounds = 10;
+
+    [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    private Phase phase = Phase.Ready;
+    private WordDealer? dealer;
+    private Word? word, answered;
+    private List<Word> options = new();
+    private int index, score, previousBest;
+    private readonly List<Word> mistakes = new();
+
+    private async Task Start()
+    {
+        dealer = new WordDealer(GamePicker.Pool(GroupWords, AllWords, StateOf), StateOf, 12);
+        index = score = 0;
+        previousBest = Best;
+        mistakes.Clear();
+        phase = Phase.Playing;
+        await Deal();
+    }
+
+    private async Task Deal()
+    {
+        answered = null;
+        word = dealer!.Next();
+        if (word is null) return;
+        options = GamePicker.Distractors(word, AllWords, 3).Append(word).OrderBy(_ => Random.Shared.Next()).ToList();
+        await SayIt();
+    }
+
+    private async Task SayIt()
+    {
+        if (word is not null && Speak is not null) await Speak(GamePicker.Speakable(word));
+    }
+
+    private void Pick(Word opt)
+    {
+        if (word is null || answered is not null) return;
+        answered = opt;
+        if (opt == word) score++;
+        else if (!mistakes.Contains(word)) mistakes.Add(word);
+    }
+
+    private async Task Next()
+    {
+        index++;
+        if (index >= Rounds)
+        {
+            phase = Phase.Done;
+            await OnFinished.InvokeAsync(score);
+            return;
+        }
+        await Deal();
+    }
+}

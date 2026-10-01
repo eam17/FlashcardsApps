@@ -42,7 +42,14 @@ Upload the contents of `bin/Release/net10.0/publish/wwwroot` to any static host 
 - The speaker buttons read the word and sentence aloud with your device's Spanish voice (if it has one).
 - Nouns show their article with a colour: teal = masculine (el), pink = feminine (la), purple = either. Verbs show present (yo / tú / él) and past forms on the answer side.
 - Pick a group from the dropdown: frequency groups of 100, topics (food, travel, family…), or *Tricky words*.
-- **Games** tab: practice that doesn't change your levels. *Match race*: match Spanish to English against a 60-second clock (wrong pairs cost 3 seconds); words you've seen but don't know yet come up most. New games go in `Components/Games/` and get listed in `GamesHub.razor`.
+- **Games** tab: practice that doesn't change your levels. Tricky words and words you're currently learning come up most, with an easy one now and then. Words come from the group in the picker.
+  - *Match race* – match Spanish to English (60 s, wrong pairs −3 s). Matched spots stay empty for a moment and then refill in place; one unmatched word waits on each side so the two new tiles never match each other.
+  - *Gender sort* – tap el or la for each noun (60 s).
+  - *True or false* – does the Spanish match the English? (60 s)
+  - *Listen and tap* – hear the word, pick its meaning (10 words).
+  - *Fill the gap* – Spanish sentence with a missing word, 4 Spanish options, no English (60 s).
+  - *Word builder* – spell the Spanish from scrambled letters (8 words).
+  - To add a game: put its component in `Components/Games/`, list it in `GamesHub.razor`; `GameKit.cs` has the shared word picker and timer.
 
 ## Export and import your progress
 

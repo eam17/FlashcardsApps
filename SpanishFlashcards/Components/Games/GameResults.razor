@@ -1,0 +1,40 @@
+@* Shared end-of-round screen: score, best, words to look at again, play again. *@
+<div class="race-intro">
+    <div class="race-title">@Headline</div>
+    @if (Score > PreviousBest)
+    {
+        <p><strong>New best score!</strong> Previous best: @PreviousBest</p>
+    }
+    else
+    {
+        <p>Best score: @Best</p>
+    }
+
+    @if (Mistakes.Count > 0)
+    {
+        <div class="race-mistakes">
+            <div class="small"><strong>Words to look at again</strong></div>
+            @foreach (var w in Mistakes)
+            {
+                <div class="race-mistake">
+                    @if (w.IsNoun)
+                    {
+                        <span class="art-chip small @w.GenderClass">@w.ArticleChip</span>
+                    }
+                    <span class="row-word @w.GenderClass">@w.Es</span> — @w.En
+                </div>
+            }
+        </div>
+    }
+
+    <button type="button" class="primary" @onclick="OnPlayAgain">Play again</button>
+</div>
+
+@code {
+    [Parameter] public string Headline { get; set; } = "";
+    [Parameter] public int Score { get; set; }
+    [Parameter] public int PreviousBest { get; set; }
+    [Parameter] public int Best { get; set; }
+    [Parameter] public IReadOnlyList<Word> Mistakes { get; set; } = Array.Empty<Word>();
+    [Parameter] public EventCallback OnPlayAgain { get; set; }
+}

@@ -1,11 +1,14 @@
-@* Match race: tap a Spanish word and its English meaning. 60 seconds; each wrong pair costs 3 seconds. *@
+@* Match race: tap a Spanish word and its English meaning. 60 seconds; each wrong pair costs 3 seconds.
+   Like Duolingo: a matched pair leaves an empty spot for a moment, then new words fill the same spots –
+   nothing else moves. One unmatched word waits on each side, so the two tiles that appear together
+   never belong to each other (no free answers from position or timing). *@
 @implements IDisposable
 
 @if (phase == Phase.Ready)
 {
     <div class="race-intro">
         <div class="race-title">Match race</div>
-        <p>Tap a Spanish word, then its English meaning. Each match is replaced by a new pair.
+        <p>Tap a Spanish word, then its English meaning. Matched spots refill after a moment.
            You have <strong>60 seconds</strong>, and every wrong pair costs <strong>3 seconds</strong>.</p>
         <p class="small">Best score: @Best</p>
         <button type="button" class="primary" @onclick="Start">Start</button>
@@ -16,10 +19,10 @@ else if (phase == Phase.Playing)
     <div class="race">
         <div class="race-top">
             <div class="race-score" aria-live="polite">@score matched</div>
-            <div class="race-time">@Math.Max(0, Math.Ceiling(remaining))s</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
         </div>
         <div class="race-bar" aria-hidden="true">
-            <div class="race-bar-fill @(remaining < 10 ? "low" : "")" style="width: @(BarPercent)%"></div>
+            <div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div>
         </div>
 
         <div class="race-grid">
@@ -28,10 +31,10 @@ else if (phase == Phase.Playing)
                 var i = r;
                 var l = left[i];
                 var rr = right[i];
-                <button type="button" class="race-tile es @TileClass(true, i)"
+                <button type="button" class="race-tile es @TileClass(true, i, l is null)"
                         aria-pressed="@(selLeft == i ? "true" : "false")"
                         disabled="@(l is null)" @onclick="() => TapLeft(i)">@(l?.Es)</button>
-                <button type="button" class="race-tile en @TileClass(false, i)"
+                <button type="button" class="race-tile en @TileClass(false, i, rr is null)"
                         aria-pressed="@(selRight == i ? "true" : "false")"
                         disabled="@(rr is null)" @onclick="() => TapRight(i)">@(rr?.En)</button>
             }
@@ -40,30 +43,8 @@ else if (phase == Phase.Playing)
 }
 else
 {
-    <div class="race-intro">
-        <div class="race-title">@score matched</div>
-        @if (score > previousBest)
-        {
-            <p><strong>New best score!</strong> Previous best: @previousBest</p>
-        }
-        else
-        {
-            <p>Best score: @Best</p>
-        }
-
-        @if (mistakes.Count > 0)
-        {
-            <div class="race-mistakes">
-                <div class="small"><strong>Words to look at again</strong></div>
-                @foreach (var w in mistakes)
-                {
-                    <div class="race-mistake"><span class="row-word @w.GenderClass">@w.Es</span> — @w.En</div>
-                }
-            </div>
-        }
-
-        <button type="button" class="primary" @onclick="Start">Play again</button>
-    </div>
+    <GameResults Headline="@($"{score} matched")" Score="score" PreviousBest="previousBest" Best="Best"
+                 Mistakes="mistakes" OnPlayAgain="Start" />
 }
 
 @code {
@@ -72,6 +53,8 @@ else
     private const int Rows = 5;
     private const double GameSeconds = 60;
     private const double PenaltySeconds = 3;
+    private static readonly TimeSpan LeftRefillDelay = TimeSpan.FromMilliseconds(900);
+    private static readonly TimeSpan RightRefillDelay = TimeSpan.FromMilliseconds(1300);
 
     [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
     [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
@@ -79,99 +62,89 @@ else
     [Parameter] public int Best { get; set; }
     [Parameter] public EventCallback<int> OnFinished { get; set; }
 
+    private readonly GameClock clock = new();
     private Phase phase = Phase.Ready;
+    private WordDealer? dealer;
+
+    // What's on the board, and what's waiting to drop into an empty spot.
     private readonly Word?[] left = new Word?[Rows];
     private readonly Word?[] right = new Word?[Rows];
+    private readonly Word?[] leftPending = new Word?[Rows];
+    private readonly Word?[] rightPending = new Word?[Rows];
+    private readonly DateTime[] leftRefillAt = new DateTime[Rows];
+    private readonly DateTime[] rightRefillAt = new DateTime[Rows];
+
+    // The one Spanish word whose English isn't out yet, and the one English whose Spanish isn't out yet.
+    private Word? orphanLeft, orphanRight;
+    private int refills;
+
     private int? selLeft, selRight;
-    private int? badLeft, badRight, goodLeft, goodRight;
+    private int? badLeft, badRight;
     private DateTime flashUntil;
     private int score, previousBest;
-    private DateTime endsAt;
-    private double remaining = GameSeconds;
     private readonly List<Word> mistakes = new();
-    private readonly Queue<string> recent = new();
-    private List<Word> pool = new();
-    private CancellationTokenSource? cts;
 
-    private double BarPercent => Math.Clamp(remaining / GameSeconds * 100, 0, 100);
-
-    private string TileClass(bool isLeft, int i)
+    private string TileClass(bool isLeft, int i, bool empty)
     {
-        var sel = isLeft ? selLeft : selRight;
-        var bad = isLeft ? badLeft : badRight;
-        var good = isLeft ? goodLeft : goodRight;
-        if (bad == i) return "bad";
-        if (good == i) return "good";
-        return sel == i ? "sel" : "";
+        if (empty) return "empty";
+        if ((isLeft ? badLeft : badRight) == i) return "bad";
+        return (isLeft ? selLeft : selRight) == i ? "sel" : "";
     }
 
     private void Start()
     {
-        // Words from the chosen group (or all words if the group is tiny). Marked-as-known words never come back.
-        pool = GroupWords.Where(w => !Srs.IsRetired(StateOf(w))).ToList();
-        if (pool.Count < Rows * 2) pool = AllWords.Where(w => !Srs.IsRetired(StateOf(w))).ToList();
-
+        dealer = new WordDealer(GamePicker.Pool(GroupWords, AllWords, StateOf, min: Rows + 3), StateOf, 15);
         Array.Clear(left);
         Array.Clear(right);
-        recent.Clear();
+        Array.Clear(leftPending);
+        Array.Clear(rightPending);
         mistakes.Clear();
-        selLeft = selRight = badLeft = badRight = goodLeft = goodRight = null;
-        score = 0;
+        selLeft = selRight = badLeft = badRight = null;
+        orphanLeft = orphanRight = null;
+        score = refills = 0;
         previousBest = Best;
 
-        for (var i = 0; i < Rows; i++)
+        // 4 full pairs + 1 Spanish whose English comes later + 1 English whose Spanish comes later.
+        var start = new List<Word>();
+        for (var k = 0; k < Rows + 1; k++)
         {
-            var w = Draw();
-            if (w is null) break;
-            left[i] = w;
-            right[i] = w;
+            var w = Draw(start);
+            if (w is not null) start.Add(w);
         }
-        Random.Shared.Shuffle(right);
 
-        endsAt = DateTime.UtcNow.AddSeconds(GameSeconds);
-        remaining = GameSeconds;
+        if (start.Count == Rows + 1)
+        {
+            orphanLeft = start[Rows - 1];
+            orphanRight = start[Rows];
+            var lefts = start.Take(Rows).ToArray();
+            var rights = start.Take(Rows - 1).Append(orphanRight).ToArray();
+            Random.Shared.Shuffle(lefts);
+            Random.Shared.Shuffle(rights);
+            lefts.CopyTo(left, 0);
+            rights.CopyTo(right, 0);
+        }
+        else
+        {
+            // Tiny word list: plain pairs.
+            var pairs = start.Take(Rows).ToArray();
+            pairs.CopyTo(left, 0);
+            Random.Shared.Shuffle(pairs);
+            pairs.CopyTo(right, 0);
+        }
+
         phase = Phase.Playing;
-
-        cts?.Cancel();
-        cts = new CancellationTokenSource();
-        _ = RunClock(cts.Token);
+        clock.Start(GameSeconds, Tick, Finish);
     }
 
-    /// <summary>
-    /// Picks the next word, favouring words you've seen but don't know yet (and "tricky" ones),
-    /// while keeping new and learned words in the mix. Never repeats a word already on the board.
-    /// </summary>
-    private Word? Draw()
+    /// <summary>Next word that isn't on the board, waiting to drop in, or sharing a meaning with one of those.</summary>
+    private Word? Draw(IEnumerable<Word>? alsoAvoid = null)
     {
-        var onBoard = left.Concat(right).Where(w => w is not null).Select(w => w!).ToList();
-        var boardEn = onBoard.Select(w => w.En).ToHashSet();
-        var candidates = pool.Where(w => !onBoard.Contains(w) && !boardEn.Contains(w.En)).ToList();
-        if (candidates.Count == 0) return null;
-
-        var fresh = candidates.Where(w => !recent.Contains(w.Es)).ToList();
-        if (fresh.Count > 0) candidates = fresh;
-
-        var weights = candidates.Select(w => Weight(StateOf(w))).ToArray();
-        var total = weights.Sum();
-        var roll = Random.Shared.NextDouble() * total;
-        var pick = candidates[^1];
-        for (var i = 0; i < candidates.Count; i++)
-        {
-            roll -= weights[i];
-            if (roll <= 0) { pick = candidates[i]; break; }
-        }
-
-        recent.Enqueue(pick.Es);
-        while (recent.Count > 15) recent.Dequeue();
-        return pick;
-    }
-
-    private static double Weight(CardState? s)
-    {
-        if (Srs.IsTricky(s)) return 10;
-        if (Srs.IsNew(s)) return 1.5;
-        if (Srs.IsLearned(s)) return 1;
-        return 6; // seen, not learned yet
+        var inPlay = left.Concat(right).Concat(leftPending).Concat(rightPending)
+            .Append(orphanLeft).Append(orphanRight)
+            .Concat(alsoAvoid ?? Enumerable.Empty<Word>())
+            .Where(w => w is not null).Select(w => w!).ToList();
+        var meanings = inPlay.Select(w => w.En).ToHashSet();
+        return dealer!.Next(w => !inPlay.Contains(w) && !meanings.Contains(w.En));
     }
 
     private void TapLeft(int i)
@@ -200,64 +173,73 @@ else
             score++;
             left[a] = null;
             right[b] = null;
-            var next = Draw();
-            if (next is not null)
-            {
-                left[a] = next;
-                right[b] = next;
-                // Move the new pair to random spots so position never gives the answer away.
-                Swap(left, a, Random.Shared.Next(Rows));
-                Swap(right, b, Random.Shared.Next(Rows));
-            }
-            goodLeft = Array.IndexOf(left, next);
-            goodRight = Array.IndexOf(right, next);
             badLeft = badRight = null;
+            ScheduleRefill(a, b);
         }
         else
         {
-            endsAt = endsAt.AddSeconds(-PenaltySeconds);
+            clock.Penalty(PenaltySeconds);
             badLeft = a;
             badRight = b;
-            goodLeft = goodRight = null;
+            flashUntil = DateTime.UtcNow.AddMilliseconds(450);
             if (!mistakes.Contains(es)) mistakes.Add(es);
         }
-        flashUntil = DateTime.UtcNow.AddMilliseconds(450);
     }
 
-    private static void Swap(Word?[] arr, int x, int y) => (arr[x], arr[y]) = (arr[y], arr[x]);
-
-    private async Task RunClock(CancellationToken ct)
+    /// <summary>
+    /// Fill the two empty spots after a short pause. Each time, one waiting word gets its partner
+    /// and one brand-new word starts waiting – alternating sides – so the two new tiles never match each other.
+    /// </summary>
+    private void ScheduleRefill(int a, int b)
     {
-        try
+        Word? newLeft, newRight;
+        if (refills % 2 == 0)
         {
-            while (!ct.IsCancellationRequested)
+            newRight = orphanLeft;          // the waiting Spanish word gets its English
+            newLeft = Draw();               // a new Spanish word starts waiting
+            orphanLeft = newLeft;
+        }
+        else
+        {
+            newLeft = orphanRight;          // the waiting English gets its Spanish
+            newRight = Draw();              // a new English starts waiting
+            orphanRight = newRight;
+        }
+        refills++;
+
+        var now = DateTime.UtcNow;
+        leftPending[a] = newLeft;
+        leftRefillAt[a] = now + LeftRefillDelay;
+        rightPending[b] = newRight;
+        rightRefillAt[b] = now + RightRefillDelay;
+    }
+
+    private Task Tick()
+    {
+        var now = DateTime.UtcNow;
+        for (var i = 0; i < Rows; i++)
+        {
+            if (left[i] is null && leftPending[i] is not null && now >= leftRefillAt[i])
             {
-                await Task.Delay(100, ct);
-                remaining = (endsAt - DateTime.UtcNow).TotalSeconds;
-                if (DateTime.UtcNow > flashUntil)
-                {
-                    badLeft = badRight = goodLeft = goodRight = null;
-                }
-                if (remaining <= 0)
-                {
-                    remaining = 0;
-                    phase = Phase.Done;
-                    await InvokeAsync(StateHasChanged);
-                    await OnFinished.InvokeAsync(score);
-                    return;
-                }
-                await InvokeAsync(StateHasChanged);
+                left[i] = leftPending[i];
+                leftPending[i] = null;
+            }
+            if (right[i] is null && rightPending[i] is not null && now >= rightRefillAt[i])
+            {
+                right[i] = rightPending[i];
+                rightPending[i] = null;
             }
         }
-        catch (TaskCanceledException)
-        {
-            // Game left or restarted.
-        }
+        if (now > flashUntil) badLeft = badRight = null;
+        return InvokeAsync(StateHasChanged);
     }
 
-    public void Dispose()
+    private async Task Finish()
     {
-        cts?.Cancel();
-        cts?.Dispose();
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
     }
+
+    public void Dispose() => clock.Dispose();
 }

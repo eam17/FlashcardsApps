@@ -377,7 +377,7 @@ button.choice:active { background: var(--accent-soft); }
     text-align: left;
     box-shadow: 0 1px 2px rgba(21, 26, 46, .06);
 }
-.game-icon { flex-shrink: 0; width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: var(--accent); color: #fff; }
+.game-icon { flex-shrink: 0; width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: var(--accent); color: #fff; font-family: var(--display); font-weight: 800; font-size: 17px; line-height: 1; }
 .game-text { display: flex; flex-direction: column; gap: 2px; }
 .game-title { font-family: var(--display); font-weight: 800; font-size: 20px; }
 .game-desc { font-size: 14px; color: var(--muted); }
@@ -413,6 +413,33 @@ button.choice:active { background: var(--accent-soft); }
 .race-tile.good { border-color: #1E7A46; background: #DDF3E6; }
 .race-tile.bad { border-color: #B42318; background: #FDE4E1; animation: shake .3s; }
 .race-tile:disabled { opacity: .3; }
+.race-tile.empty { border-style: dashed; background: transparent; opacity: .5; }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 .race-mistakes { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 14px; background: var(--ground); }
 .race-mistake { font-size: 15px; }
+
+/* ----- shared game pieces ----- */
+.game-prompt { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 16px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); text-align: center; min-height: 140px; justify-content: center; }
+.game-word { font-family: var(--display); font-weight: 800; font-size: 36px; line-height: 1.1; overflow-wrap: anywhere; }
+.game-word.en { font-size: 26px; }
+.game-equals { font-size: 18px; color: var(--muted); }
+.game-sub { font-size: 14px; color: var(--muted); }
+.game-sentence { font-size: 21px; line-height: 1.4; font-style: italic; }
+.game-feedback { min-height: 24px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; font-size: 14px; color: var(--muted); }
+.game-feedback.ok > span:first-child { color: #1E7A46; font-weight: 800; }
+.game-feedback.no > span:first-child { color: #B42318; font-weight: 800; }
+.big-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.big-choice { min-height: 72px; border-radius: 18px; border: 2px solid var(--line-strong); background: var(--surface); color: var(--ink); font-family: var(--display); font-weight: 800; font-size: 26px; }
+.big-choice.g-m, .big-choice.g-f { border-color: var(--g); color: var(--g); background: var(--g-soft); font-size: 32px; }
+.big-choice.yes { border-color: #1E7A46; color: #14532D; background: #DDF3E6; font-size: 20px; }
+.big-choice.no { border-color: #B42318; color: #7A1A12; background: #FDE4E1; font-size: 20px; }
+.big-choice:active { transform: scale(.97); }
+.listen-btn { width: 84px; height: 84px; border-radius: 50%; border: none; background: var(--accent); color: #fff; display: grid; place-items: center; }
+.spell-slots { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; }
+.spell-slot { width: 30px; height: 40px; border-bottom: 3px solid var(--line-strong); display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 24px; }
+.spell-slot.filled { border-color: var(--accent); }
+.spell-slot.missed { border-color: #B42318; color: #B42318; }
+.spell-tiles { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.spell-tile { width: 48px; height: 52px; border-radius: 12px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font-family: var(--display); font-weight: 800; font-size: 22px; }
+.spell-tile:disabled { opacity: .2; }
+.spell-tile.bad { border-color: #B42318; background: #FDE4E1; animation: shake .3s; }
