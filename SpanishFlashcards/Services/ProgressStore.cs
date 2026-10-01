@@ -30,15 +30,26 @@ public sealed class ProgressStore(IJSRuntime js)
     public async Task<Progress> LoadAsync()
     {
         Progress? p = null;
+        string? raw = null;
         try
         {
-            var raw = await js.InvokeAsync<string?>("localStorage.getItem", Key);
+            raw = await js.InvokeAsync<string?>("localStorage.getItem", Key);
             if (!string.IsNullOrWhiteSpace(raw))
+            {
                 p = JsonSerializer.Deserialize<Progress>(raw, Options);
+                // Keep a copy of the last progress that loaded fine, in case a future version misreads it.
+                await js.InvokeVoidAsync("localStorage.setItem", Key + "-backup", raw);
+            }
         }
         catch (Exception)
         {
-            // Storage blocked or data corrupted: start fresh rather than crash.
+            // Data couldn't be read (e.g. a future format change). Never throw it away:
+            // stash it under a separate key before the app starts saving fresh progress.
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                try { await js.InvokeVoidAsync("localStorage.setItem", $"{Key}-unreadable-{DateTime.Now:yyyyMMddHHmmss}", raw); }
+                catch (Exception) { }
+            }
         }
 
         p ??= new Progress();

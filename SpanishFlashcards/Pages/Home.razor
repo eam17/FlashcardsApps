@@ -344,9 +344,8 @@ else
         groups = BuildGroups(all);
         progress = await Store.LoadAsync();
 
-        // Drop saved data for words that are no longer in the list.
-        foreach (var key in progress.Cards.Keys.Where(k => !byId.ContainsKey(k)).ToList())
-            progress.Cards.Remove(key);
+        // Saved progress for words that aren't in the current list is kept (never deleted),
+        // so editing words.json can't wipe anything; it just isn't shown.
         if (progress.Order is null || progress.Order.Count != all.Count || progress.Order.Any(id => !byId.ContainsKey(id)))
             progress.Order = null;
 
@@ -357,6 +356,9 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        // Ask the browser to keep this site's storage even when the phone is low on space.
+        try { await JS.InvokeAsync<bool>("palabras.persistStorage"); }
+        catch (Exception) { }
         try { canSpeak = await JS.InvokeAsync<bool>("palabras.canSpeak"); }
         catch (Exception) { canSpeak = false; }
         if (canSpeak) StateHasChanged();
@@ -386,7 +388,7 @@ else
 
     private CardState? State(Word w) => progress.Cards.TryGetValue(w.Es, out var s) ? s : null;
 
-    private int LearnedCount => progress.Cards.Values.Count(c => Srs.IsLearned(c));
+    private int LearnedCount => words is null ? 0 : words.Count(w => Srs.IsLearned(State(w)));
 
     private int Percent => words is { Count: > 0 } ? (int)Math.Round(LearnedCount * 100.0 / words.Count) : 0;
 

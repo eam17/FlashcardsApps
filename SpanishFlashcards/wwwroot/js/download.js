@@ -12,6 +12,17 @@ window.palabras = {
         setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     },
 
+    // Ask the browser not to clear this site's saved data when storage runs low.
+    persistStorage: async function () {
+        try {
+            if (navigator.storage && navigator.storage.persist) {
+                if (await navigator.storage.persisted()) return true;
+                return await navigator.storage.persist();
+            }
+        } catch (e) { }
+        return false;
+    },
+
     canSpeak: function () {
         return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
     },
