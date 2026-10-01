@@ -80,16 +80,16 @@ public sealed class VerbDecode
             new("ve-", ["ve"], false, ["ver"], ["impf"], "*veía* = I/he was seeing, used to see."),
         ]),
         ("Future and conditional", [
-            new("tendr-", ["tendr"], false, ["tener"], ["fut", "cond"]),
-            new("vendr-", ["vendr"], false, ["venir"], ["fut", "cond"]),
-            new("pondr-", ["pondr"], false, ["poner"], ["fut", "cond"]),
-            new("saldr-", ["saldr"], false, ["salir"], ["fut", "cond"]),
-            new("podr-", ["podr"], false, ["poder"], ["fut", "cond"]),
-            new("sabr-", ["sabr"], false, ["saber"], ["fut", "cond"]),
-            new("querr-", ["querr"], false, ["querer"], ["fut", "cond"]),
-            new("habr-", ["habr"], false, ["haber"], ["fut", "cond"], "*habrá* = there will be; also the helper in *habré hecho*."),
-            new("dir-", ["dir"], false, ["decir"], ["fut", "cond"]),
-            new("har-", ["har"], false, ["hacer"], ["fut", "cond"]),
+            new("tendr-", ["tendr"], false, ["tener"], ["fut", "cond"], "ten(e)r → *tendr-*: the last *e* becomes *d*."),
+            new("vendr-", ["vendr"], false, ["venir"], ["fut", "cond"], "ven(i)r → *vendr-*: the *i* becomes *d*."),
+            new("pondr-", ["pondr"], false, ["poner"], ["fut", "cond"], "pon(e)r → *pondr-*: the last *e* becomes *d*."),
+            new("saldr-", ["saldr"], false, ["salir"], ["fut", "cond"], "sal(i)r → *saldr-*: the *i* becomes *d*."),
+            new("podr-", ["podr"], false, ["poder"], ["fut", "cond"], "pod(e)r → *podr-*: the last *e* drops out."),
+            new("sabr-", ["sabr"], false, ["saber"], ["fut", "cond"], "sab(e)r → *sabr-*: the last *e* drops out."),
+            new("querr-", ["querr"], false, ["querer"], ["fut", "cond"], "quer(e)r → *querr-*: the last *e* drops out, leaving *rr*."),
+            new("habr-", ["habr"], false, ["haber"], ["fut", "cond"], "hab(e)r → *habr-*: the last *e* drops out. *habrá* = there will be; also the helper in *habré hecho*."),
+            new("dir-", ["dir"], false, ["decir"], ["fut", "cond"], "*decir* shrinks to *dir-*."),
+            new("har-", ["har"], false, ["hacer"], ["fut", "cond"], "*hacer* shrinks to *har-*."),
         ]),
         ("Present subjunctive", [
             new("vay-", ["vay"], false, ["ir"], ["subj"]),
@@ -138,8 +138,8 @@ public sealed class VerbDecode
         new("When: look just before the end", "Most tenses have a sign between the stem and the person ending.",
         [
             new("-aba- / -ía-", "was …ing, used to (imperfect)", [("hablar", "impf", 0), ("comer", "impf", 3)]),
-            new("whole infinitive + -é, -ás, -á…", "will (future)", [("hablar", "fut", 0), ("comer", "fut", 2)]),
-            new("whole infinitive + -ía…", "would (conditional)", [("hablar", "cond", 0), ("comer", "cond", 3)]),
+            new("whole infinitive + -é, -ás, -á…", "will (future). A few verbs shorten the infinitive first: *tendr-*, *querr-*, *dir-*", [("hablar", "fut", 0), ("comer", "fut", 2)]),
+            new("whole infinitive + -ía…", "would (conditional). The same short stems as the future: *tendría*, *querría*", [("hablar", "cond", 0), ("comer", "cond", 3)]),
             new("-ra- / -se-", "past subjunctive: if … did, (that) … would", [("hablar", "impsubj", 0), ("comer", "impsubj", 2)]),
             new("the \"wrong\" vowel", "present subjunctive: *-ar* verbs take *e*, *-er/-ir* verbs take *a*. Comes after *que*, *ojalá*…", [("hablar", "subj", 2), ("comer", "subj", 2)]),
             new("-é, -aste, -ó / -í, -iste, -ió", "did (preterite)", [("hablar", "pret", 2), ("comer", "pret", 1)]),
@@ -397,58 +397,144 @@ public sealed class VerbDecode
 
     // ------------------------------------------------------------------ clues
 
-    /// <summary>Short reasons the answer is what it is: the stem, the person ending, the tense sign.</summary>
-    public static List<string> Clues(DecodeItem item)
+    /// <summary>
+    /// Why the answer is what it is, built from this form's own pieces: where the verb comes from, what the
+    /// ending says about who, what the tense sign looks like, and (when you picked the right verb but the wrong
+    /// tense or person) what the form you picked would have looked like.
+    /// </summary>
+    public static List<string> Clues(DecodeItem item, string? pickedVerb = null, string? pickedWho = null, string? pickedWhen = null)
     {
         var lines = new List<string>();
         var t = item.Tense;
         var v = item.Verb;
         var info = VerbGrammar.TenseById[t];
-        var group = VerbGrammar.PersonsFor(t)[item.Person].Group;
+        var personInfo = VerbGrammar.PersonsFor(t)[item.Person];
+        var group = personInfo.Group;
+        var form = item.Form.ToLowerInvariant();
+        var inf = v.Reflexive ? v.Inf[..^2] : v.Inf;
 
-        if (StemFor(v, t, item.Form.ToLowerInvariant()) is { } stem)
-            lines.Add($"*{stem.Label}* → *{string.Join(" / ", stem.Verbs)}*" + (stem.Note is null ? "" : $". {stem.Note}"));
+        var strange = StemFor(v, t, form);
+        if (strange is not null)
+            lines.Add($"*{strange.Label}* → *{string.Join(" / ", strange.Verbs)}*." + (strange.Note is null ? "" : $" {strange.Note}"));
 
         if (info.IsCompound)
         {
-            var words = item.Form.Split(' ');
+            var words = form.Split(' ');
             var aux = words.Length >= 2 ? words[^2] : "";
             lines.Add($"*{aux}* (a form of *haber*) says who and when; *{words[^1]}* says which verb.");
             lines.Add($"{TenseLabel(t)}.");
-            return lines;
+        }
+        else
+        {
+            var shape = VerbParts.Analyse(v, t, item.Person, form);
+            var whole = shape.Whole || shape.Ending.Length == 0;
+            if (!whole) lines.Add($"Split it: *{shape.Stem}* + *-{shape.Ending}*.");
+            lines.Add(WhoClue(t, personInfo, whole ? null : shape.Ending));
+            lines.Add(WhenClue(v, t, item.Person, inf, shape, whole));
         }
 
-        var person = (group, t) switch
-        {
-            ("nos", _) => "*-mos* = we",
-            ("ellos", _) => "*-n* = they / you all",
-            ("vos", _) => "*-is* = you all (vosotros)",
-            ("tu", "pret") => "*-ste* = you (past)",
-            ("tu", "cmd") => "an order to *tú*",
-            ("tu", _) => "*-s* = you",
-            ("yo", "pres") => "*-o* = I",
-            ("yo", "pret") => "*-é / -í* (or *-e* on a special stem) = I",
-            ("yo", "fut") => "*-é* = I",
-            ("yo", _) => "same form as *él*: the sentence tells you who",
-            ("el", "pret") => "*-ó / -ió* (or *-o* on a special stem) = he / she",
-            ("el", "fut") => "*-á* = he / she",
-            ("el", "cmd") => "an order to *usted*",
-            ("el", "pres") => "no extra ending = he / she / you formal",
-            _ => "no extra ending = he / she (or I)",
-        };
-        lines.Add(person + ".");
-
-        lines.Add(t switch
-        {
-            "impf" => "*-aba-* / *-ía-* = was …ing, used to.",
-            "fut" => "Whole infinitive (or a short stem) + ending = will.",
-            "cond" => "Whole infinitive (or a short stem) + *-ía* = would.",
-            "subj" => "The \"wrong\" vowel (*-ar* → *e*, *-er/-ir* → *a*) = present subjunctive.",
-            "impsubj" => "*-ra-* / *-se-* = past subjunctive (if … did).",
-            "cmd" => "No subject, often with *¡!*: a command.",
-            "pret" => "Past endings = did (preterite).",
-            _ => "Plain present endings = does / is doing.",
-        });
+        var compare = Comparison(item, pickedVerb, pickedWho, pickedWhen);
+        if (compare is not null) lines.Add(compare);
         return lines;
+    }
+
+    private static string WhoMeaning(string group) => group switch
+    {
+        "yo" => "I",
+        "tu" => "you (*tú*)",
+        "el" => "he / she / you formal (*usted*)",
+        "nos" => "we",
+        "vos" => "you all (*vosotros*)",
+        _ => "they / you all (*ustedes*)",
+    };
+
+    private static string WhoClue(string t, PersonInfo p, string? ending)
+    {
+        if (t == "cmd")
+            return p.Id switch
+            {
+                "tu" => "An order to *tú*. It looks like the *él* present: *habla* = speak!",
+                "tu-neg" => "*no* + the *tú* subjunctive = don't! (to *tú*)",
+                "usted" => "An order to *usted*, using the subjunctive form.",
+                "nos" => "*-mos* in a command = let's …",
+                "vos" => "*-d* (or *-os* when reflexive) = an order to *vosotros*.",
+                "vos-neg" => "*no* + the *vosotros* subjunctive = don't! (to *vosotros*)",
+                _ => "*-n* = an order to *ustedes*, using the subjunctive form.",
+            };
+
+        if (ending is null)
+            return $"A short form with no ending of its own: learn it as a whole word. It means {WhoMeaning(p.Group)}.";
+
+        var shared = (t is "impf" or "cond" or "subj" or "impsubj") && (p.Group is "yo" or "el");
+        if (shared)
+            return $"*-{ending}* = I or he / she: in this tense they're the same form. The sentence (or a *yo* / *él*) tells you who.";
+        if (t == "pret" && p.Group == "tu")
+            return $"*-{ending}* = you (*tú*). The preterite's *tú* ending is *-ste*: no *-s* at the end.";
+        return $"*-{ending}* = {WhoMeaning(p.Group)}.";
+    }
+
+    private static string WhenClue(Verb v, string t, int person, string inf, VerbParts.FormShape shape, bool whole)
+    {
+        var plainInf = AnswerCheck.StripAccents(inf);
+        var plainStem = AnswerCheck.StripAccents(shape.Stem);
+        switch (t)
+        {
+            case "fut":
+            case "cond":
+            {
+                var endings = t == "fut" ? "*-é, -ás, -á, -emos, -án*" : "*-ía, -ías, -ía, -íamos, -ían*";
+                var meaning = t == "fut" ? "will" : "would";
+                var sign = t == "fut" ? "an accented *-é* / *-á* ending" : "*-ía*";
+                var how = whole || plainStem == plainInf
+                    ? $"The {(t == "fut" ? "future" : "conditional")} puts {endings} on the whole infinitive (*{inf}*)."
+                    : $"The {(t == "fut" ? "future" : "conditional")} puts {endings} on the whole infinitive, and a few verbs shorten it first: *{inf}* → *{shape.Stem}-*.";
+                var line = $"{how} So *r* + {sign} = {meaning}.";
+                if (t == "cond" && v.Class != "ar" && v.Form("impf", person) is { } impf)
+                    line += $" Don't mix it up with the imperfect *{impf}*, where *-ía* comes straight after the stem, no *r*.";
+                return line;
+            }
+            case "impf":
+                return "*-aba-* / *-ía-* straight after the stem = was …ing, used to (imperfect).";
+            case "pret":
+                return "A preterite ending = did (one finished action).";
+            case "subj":
+                return "The \"wrong\" vowel (*-ar* verbs take *e*, *-er/-ir* verbs take *a*) = present subjunctive. Usually after *que*, *ojalá*, *cuando*.";
+            case "impsubj":
+                return "*-ra-* / *-se-* = past subjunctive (if … did).";
+            case "cmd":
+                return "No subject, often with *¡!*: a command.";
+            default:
+                return "A plain present ending = does / is doing.";
+        }
+    }
+
+    /// <summary>
+    /// When the verb was right but the tense or person wasn't: "You picked present · tú. That would be *quieres*."
+    /// </summary>
+    private static string? Comparison(DecodeItem item, string? pickedVerb, string? pickedWho, string? pickedWhen)
+    {
+        if (pickedVerb is null || pickedWho is null || pickedWhen is null) return null;
+        if (item.Readings.Any(r => r.Inf == pickedVerb && r.Group == pickedWho && r.Tense == pickedWhen)) return null;
+        if (pickedVerb != item.Verb.Inf) return null;
+
+        var persons = VerbGrammar.PersonsFor(pickedWhen);
+        var negative = VerbGrammar.PersonsFor(item.Tense)[item.Person].Negative;
+        var idx = -1;
+        for (var i = 0; i < persons.Count; i++)
+        {
+            if (persons[i].Group != pickedWho) continue;
+            if (idx < 0 || persons[i].Negative == negative) idx = i;
+            if (persons[i].Negative == negative) break;
+        }
+        var tenseName = VerbGrammar.TenseById[pickedWhen].Name.ToLowerInvariant();
+        var who = pickedWho switch
+        {
+            "yo" => "yo", "tu" => "tú", "el" => "él", "nos" => "nosotros", "vos" => "vosotros", _ => "ellos",
+        };
+        if (idx < 0) return $"You picked {tenseName} · {who}, but there's no {tenseName} for {who}.";
+        var form = item.Verb.Form(pickedWhen, idx);
+        if (form is null) return null;
+        if (persons[idx].Negative) form = "no " + form;
+        return $"You picked {tenseName} · {who}. That would be *{form}*, not *{item.Display.ToLowerInvariant()}*.";
     }
 }

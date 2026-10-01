@@ -33,7 +33,7 @@ else
 
         @if (mode == Mode.Decode)
         {
-            <DecodeView Book="book" Progress="Progress" OnSaved="Saved" CanSpeak="CanSpeak" Speak="Speak" />
+            <DecodeView Book="book" Progress="Progress" OnSaved="Saved" CanSpeak="CanSpeak" Speak="Speak" Tree="tree" OnOpenRules="OpenRulesFromDecode" />
         }
         else if (mode == Mode.Grid)
         {
@@ -334,6 +334,15 @@ else
     {
         mode = Mode.Tree;
         Go(node);
+    }
+
+    /// <summary>From a Decode answer: show the rules for that verb or tense. The Decode round stays where it was.</summary>
+    private void OpenRulesFromDecode(VerbNode node)
+    {
+        mode = Mode.Tree;
+        current = node;
+        lastNodeId = node.Id;
+        SetView(View.Rules);
     }
 
     private void PractiseFromGrid(VerbNode node)

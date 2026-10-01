@@ -189,11 +189,26 @@
                 </span>
             </div>
             <ul class="dc-clues">
-                @foreach (var clue in VerbDecode.Clues(item))
+                @foreach (var clue in VerbDecode.Clues(item, round.Verb, round.Who, round.When))
                 {
                     <li>@RuleText.Render(clue)</li>
                 }
             </ul>
+            @if (Tree is not null)
+            {
+                var tenseNode = TenseNode(item.Tense);
+                var verbNode = VerbStories.NodeFor(new StoryToken { V = item.Verb.Inf, Te = item.Tense, P = new[] { item.Person } }, Tree, Book);
+                <div class="dc-rules">
+                    @if (verbNode is not null && verbNode != tenseNode)
+                    {
+                        <button type="button" class="tool small" @onclick="() => OnOpenRules.InvokeAsync(verbNode)">@RulesLabel(verbNode, item)</button>
+                    }
+                    @if (tenseNode is not null)
+                    {
+                        <button type="button" class="tool small" @onclick="() => OnOpenRules.InvokeAsync(tenseNode)">@($"{VerbGrammar.TenseById[item.Tense].Name} rules")</button>
+                    }
+                </div>
+            }
             <div class="vp-next">
                 @if (CanSpeak && Speak is not null)
                 {
@@ -213,6 +228,8 @@
     [Parameter] public EventCallback OnSaved { get; set; }
     [Parameter] public bool CanSpeak { get; set; }
     [Parameter] public Func<string, Task>? Speak { get; set; }
+    [Parameter] public VerbNode? Tree { get; set; }
+    [Parameter] public EventCallback<VerbNode> OnOpenRules { get; set; }
 
     private enum Section { Practise, Endings, Stems }
 
@@ -266,6 +283,13 @@
     }
 
     private void Next() => round?.Next();
+
+    private VerbNode? TenseNode(string tense) => Tree?.Children.FirstOrDefault(n => n.Kind == NodeKind.Tense && n.Tense == tense);
+
+    /// <summary>"querer in the future" for a verb item, or the pattern's title for a regular form.</summary>
+    private static string RulesLabel(VerbNode node, DecodeItem item) => node.Kind == NodeKind.Verb
+        ? $"Rules: {item.Verb.Inf} in the {VerbGrammar.TenseById[item.Tense].Name.ToLowerInvariant()}"
+        : $"Rules: {node.Title}";
 
     private static string OptClass(bool chosen, bool correct, bool answered) =>
         !answered ? (chosen ? "on" : "") : correct ? "right" : chosen ? "wrong" : "dim";

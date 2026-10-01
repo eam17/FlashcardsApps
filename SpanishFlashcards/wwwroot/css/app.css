@@ -1002,6 +1002,7 @@ span.st-verb { cursor: default; border-bottom: none; }
 .dc-opt:disabled { cursor: default; }
 .dc-clues { margin: 0; padding: 10px 14px 10px 30px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid #0E7490; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
 .dc-clues em[lang="es"] { font-style: normal; font-weight: 700; color: var(--accent-ink); }
+.dc-rules { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .dc-guide { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
 .dc-guide h3 { margin: 0; font-family: var(--display); font-size: 17px; }
