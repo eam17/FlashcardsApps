@@ -18,6 +18,18 @@ public sealed class Progress
 
     public string? Group { get; set; }
 
+    /// <summary>Most reviews you HAVE to do per day (0 = no limit). Anything beyond is optional extra.</summary>
+    public int DailyReviewLimit { get; set; } = 30;
+
+    /// <summary>Day the review counter below belongs to.</summary>
+    public DateOnly? ReviewDay { get; set; }
+
+    /// <summary>Due reviews answered on <see cref="ReviewDay"/>.</summary>
+    public int ReviewsDoneToday { get; set; }
+
+    /// <summary>Best scores per game id (e.g. "match-race").</summary>
+    public Dictionary<string, int> GameBests { get; set; } = new();
+
     /// <summary>Old format ("known"/"learning" per word). Converted to <see cref="Cards"/> on load.</summary>
     public Dictionary<string, string>? Status { get; set; }
 }

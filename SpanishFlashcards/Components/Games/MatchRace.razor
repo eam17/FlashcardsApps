@@ -1,0 +1,263 @@
+@* Match race: tap a Spanish word and its English meaning. 60 seconds; each wrong pair costs 3 seconds. *@
+@implements IDisposable
+
+@if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">Match race</div>
+        <p>Tap a Spanish word, then its English meaning. Each match is replaced by a new pair.
+           You have <strong>60 seconds</strong>, and every wrong pair costs <strong>3 seconds</strong>.</p>
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score matched</div>
+            <div class="race-time">@Math.Max(0, Math.Ceiling(remaining))s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true">
+            <div class="race-bar-fill @(remaining < 10 ? "low" : "")" style="width: @(BarPercent)%"></div>
+        </div>
+
+        <div class="race-grid">
+            @for (var r = 0; r < Rows; r++)
+            {
+                var i = r;
+                var l = left[i];
+                var rr = right[i];
+                <button type="button" class="race-tile es @TileClass(true, i)"
+                        aria-pressed="@(selLeft == i ? "true" : "false")"
+                        disabled="@(l is null)" @onclick="() => TapLeft(i)">@(l?.Es)</button>
+                <button type="button" class="race-tile en @TileClass(false, i)"
+                        aria-pressed="@(selRight == i ? "true" : "false")"
+                        disabled="@(rr is null)" @onclick="() => TapRight(i)">@(rr?.En)</button>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="race-intro">
+        <div class="race-title">@score matched</div>
+        @if (score > previousBest)
+        {
+            <p><strong>New best score!</strong> Previous best: @previousBest</p>
+        }
+        else
+        {
+            <p>Best score: @Best</p>
+        }
+
+        @if (mistakes.Count > 0)
+        {
+            <div class="race-mistakes">
+                <div class="small"><strong>Words to look at again</strong></div>
+                @foreach (var w in mistakes)
+                {
+                    <div class="race-mistake"><span class="row-word @w.GenderClass">@w.Es</span> — @w.En</div>
+                }
+            </div>
+        }
+
+        <button type="button" class="primary" @onclick="Start">Play again</button>
+    </div>
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+
+    private const int Rows = 5;
+    private const double GameSeconds = 60;
+    private const double PenaltySeconds = 3;
+
+    [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+
+    private Phase phase = Phase.Ready;
+    private readonly Word?[] left = new Word?[Rows];
+    private readonly Word?[] right = new Word?[Rows];
+    private int? selLeft, selRight;
+    private int? badLeft, badRight, goodLeft, goodRight;
+    private DateTime flashUntil;
+    private int score, previousBest;
+    private DateTime endsAt;
+    private double remaining = GameSeconds;
+    private readonly List<Word> mistakes = new();
+    private readonly Queue<string> recent = new();
+    private List<Word> pool = new();
+    private CancellationTokenSource? cts;
+
+    private double BarPercent => Math.Clamp(remaining / GameSeconds * 100, 0, 100);
+
+    private string TileClass(bool isLeft, int i)
+    {
+        var sel = isLeft ? selLeft : selRight;
+        var bad = isLeft ? badLeft : badRight;
+        var good = isLeft ? goodLeft : goodRight;
+        if (bad == i) return "bad";
+        if (good == i) return "good";
+        return sel == i ? "sel" : "";
+    }
+
+    private void Start()
+    {
+        // Words from the chosen group (or all words if the group is tiny). Marked-as-known words never come back.
+        pool = GroupWords.Where(w => !Srs.IsRetired(StateOf(w))).ToList();
+        if (pool.Count < Rows * 2) pool = AllWords.Where(w => !Srs.IsRetired(StateOf(w))).ToList();
+
+        Array.Clear(left);
+        Array.Clear(right);
+        recent.Clear();
+        mistakes.Clear();
+        selLeft = selRight = badLeft = badRight = goodLeft = goodRight = null;
+        score = 0;
+        previousBest = Best;
+
+        for (var i = 0; i < Rows; i++)
+        {
+            var w = Draw();
+            if (w is null) break;
+            left[i] = w;
+            right[i] = w;
+        }
+        Random.Shared.Shuffle(right);
+
+        endsAt = DateTime.UtcNow.AddSeconds(GameSeconds);
+        remaining = GameSeconds;
+        phase = Phase.Playing;
+
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        _ = RunClock(cts.Token);
+    }
+
+    /// <summary>
+    /// Picks the next word, favouring words you've seen but don't know yet (and "tricky" ones),
+    /// while keeping new and learned words in the mix. Never repeats a word already on the board.
+    /// </summary>
+    private Word? Draw()
+    {
+        var onBoard = left.Concat(right).Where(w => w is not null).Select(w => w!).ToList();
+        var boardEn = onBoard.Select(w => w.En).ToHashSet();
+        var candidates = pool.Where(w => !onBoard.Contains(w) && !boardEn.Contains(w.En)).ToList();
+        if (candidates.Count == 0) return null;
+
+        var fresh = candidates.Where(w => !recent.Contains(w.Es)).ToList();
+        if (fresh.Count > 0) candidates = fresh;
+
+        var weights = candidates.Select(w => Weight(StateOf(w))).ToArray();
+        var total = weights.Sum();
+        var roll = Random.Shared.NextDouble() * total;
+        var pick = candidates[^1];
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            roll -= weights[i];
+            if (roll <= 0) { pick = candidates[i]; break; }
+        }
+
+        recent.Enqueue(pick.Es);
+        while (recent.Count > 15) recent.Dequeue();
+        return pick;
+    }
+
+    private static double Weight(CardState? s)
+    {
+        if (Srs.IsTricky(s)) return 10;
+        if (Srs.IsNew(s)) return 1.5;
+        if (Srs.IsLearned(s)) return 1;
+        return 6; // seen, not learned yet
+    }
+
+    private void TapLeft(int i)
+    {
+        if (left[i] is null) return;
+        selLeft = selLeft == i ? null : i;
+        TryMatch();
+    }
+
+    private void TapRight(int i)
+    {
+        if (right[i] is null) return;
+        selRight = selRight == i ? null : i;
+        TryMatch();
+    }
+
+    private void TryMatch()
+    {
+        if (selLeft is not int a || selRight is not int b) return;
+        var es = left[a]!;
+        var en = right[b]!;
+        selLeft = selRight = null;
+
+        if (ReferenceEquals(es, en) || es.En == en.En)
+        {
+            score++;
+            left[a] = null;
+            right[b] = null;
+            var next = Draw();
+            if (next is not null)
+            {
+                left[a] = next;
+                right[b] = next;
+                // Move the new pair to random spots so position never gives the answer away.
+                Swap(left, a, Random.Shared.Next(Rows));
+                Swap(right, b, Random.Shared.Next(Rows));
+            }
+            goodLeft = Array.IndexOf(left, next);
+            goodRight = Array.IndexOf(right, next);
+            badLeft = badRight = null;
+        }
+        else
+        {
+            endsAt = endsAt.AddSeconds(-PenaltySeconds);
+            badLeft = a;
+            badRight = b;
+            goodLeft = goodRight = null;
+            if (!mistakes.Contains(es)) mistakes.Add(es);
+        }
+        flashUntil = DateTime.UtcNow.AddMilliseconds(450);
+    }
+
+    private static void Swap(Word?[] arr, int x, int y) => (arr[x], arr[y]) = (arr[y], arr[x]);
+
+    private async Task RunClock(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(100, ct);
+                remaining = (endsAt - DateTime.UtcNow).TotalSeconds;
+                if (DateTime.UtcNow > flashUntil)
+                {
+                    badLeft = badRight = goodLeft = goodRight = null;
+                }
+                if (remaining <= 0)
+                {
+                    remaining = 0;
+                    phase = Phase.Done;
+                    await InvokeAsync(StateHasChanged);
+                    await OnFinished.InvokeAsync(score);
+                    return;
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Game left or restarted.
+        }
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}

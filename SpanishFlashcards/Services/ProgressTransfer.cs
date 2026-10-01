@@ -29,6 +29,9 @@ public sealed class ExportCard
 
     /// <summary>Marked as known: never comes back for review.</summary>
     public bool Retired { get; set; }
+
+    /// <summary>Times forgotten after being seen (for "tricky words").</summary>
+    public int Lapses { get; set; }
 }
 
 public sealed record ImportResult(Dictionary<string, CardState> Cards, int Learned, int Learning, int Unknown);
@@ -55,7 +58,7 @@ public static class ProgressTransfer
             else if (!Srs.IsNew(s)) export.StillLearning.Add(w.Es);
             else export.NotStarted.Add(w.Es);
 
-            if (!Srs.IsNew(s)) export.Schedule[w.Es] = new ExportCard { Level = s!.Box, Due = s.Due, Retired = s.Retired };
+            if (!Srs.IsNew(s)) export.Schedule[w.Es] = new ExportCard { Level = s!.Box, Due = s.Due, Retired = s.Retired, Lapses = s.Lapses };
         }
         return JsonSerializer.Serialize(export, JsonOptions);
     }
@@ -134,7 +137,7 @@ public static class ProgressTransfer
             foreach (var (w, c) in data.Schedule)
                 result.Add((w, c.Retired
                     ? Srs.MarkLearned(today)
-                    : new CardState { Box = Math.Clamp(c.Level, 0, Srs.MaxLevel), Due = c.Due }));
+                    : new CardState { Box = Math.Clamp(c.Level, 0, Srs.MaxLevel), Due = c.Due, Lapses = Math.Max(0, c.Lapses) }));
             return result;
         }
 

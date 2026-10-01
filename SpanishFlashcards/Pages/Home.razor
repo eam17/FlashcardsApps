@@ -11,16 +11,18 @@
 }
 else
 {
+    EnsureReviewDay();
     var group = CurrentGroup;
     var groupWords = words.Where(group.Includes).ToList();
     var groupLearned = groupWords.Count(w => Srs.IsLearned(State(w)));
-    var groupDue = groupWords.Count(w => Srs.IsDue(State(w), today));
+    var required = RequiredReviewIds();
+    var groupRequired = groupWords.Count(w => required.Contains(w.Es));
 
     <div class="app">
         <header class="top">
             <div class="top-row">
                 <div>
-                    <div class="kicker">@(tab == Tab.Study ? "Palabras" : "Your words")</div>
+                    <div class="kicker">@Kicker</div>
                     <h1>@ScreenTitle</h1>
                 </div>
                 <div class="score">
@@ -34,7 +36,7 @@ else
             </div>
         </header>
 
-        @* ---------- group picker: frequency groups and topics ---------- *@
+        @* ---------- group picker: frequency groups, topics, tricky words ---------- *@
         <div class="group-picker" role="group" aria-label="Word group">
             <button type="button" class="tool icon" aria-label="Previous group"
                     disabled="@(GroupIndex <= 0)" @onclick="() => StepGroup(-1)">
@@ -66,12 +68,12 @@ else
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
             </button>
         </div>
-        <div class="group-progress">@groupLearned of @groupWords.Count learned · @groupDue due for review</div>
+        <div class="group-progress">@groupLearned of @groupWords.Count learned · @groupRequired reviews left today</div>
 
         <main class="content">
             @if (tab == Tab.Study)
             {
-                var queue = mode == Mode.Review ? ReviewQueue(groupWords) : PracticeQueue(groupWords);
+                var queue = mode == Mode.Review ? ReviewQueue(groupWords, required) : PracticeQueue(groupWords);
                 var card = CurrentCard(queue);
 
                 <div class="study-bar">
@@ -95,8 +97,13 @@ else
                 <div class="queue-line">
                     @if (mode == Mode.Review)
                     {
-                        var dueN = queue.Count(w => Srs.IsDue(State(w), today));
-                        <span>@dueN due · @(queue.Count - dueN) new</span>
+                        var newN = queue.Count(w => Srs.IsNew(State(w)));
+                        var extraN = queue.Count - newN - groupRequired;
+                        var first = groupRequired == 0 && progress.ReviewsDoneToday > 0
+                            ? "Today's reviews are done"
+                            : $"{groupRequired} reviews left today";
+                        var extraText = extraN > 0 ? $" · {extraN} extra (optional)" : "";
+                        <span>@($"{first} · {newN} new{extraText}")</span>
                     }
                     else
                     {
@@ -108,13 +115,16 @@ else
                 {
                     var state = State(card);
                     var englishFirst = EnglishFirstFor(state);
+                    var kind = ChoiceKindFor(state, englishFirst);
+                    var choiceMode = kind != ChoiceKind.None;
+                    if (choiceMode) EnsureChoices(card, kind, state);
                     var spanishVisible = flipped || !englishFirst;
                     var cloze = card.ClozeParts;
 
                     <div class="study">
                         <div class="card-wrap">
                             <button type="button" class="card @(flipped ? "back" : "front")" @onclick="Flip"
-                                    aria-label="@CardAria(card)">
+                                    disabled="@choiceMode" aria-label="@CardAria(card, choiceMode)">
                                 <div class="card-meta">
                                     <span>@card.Tag</span>
                                     <span class="dots" title="@Srs.StageLabel(state)">
@@ -124,7 +134,7 @@ else
                                         }
                                     </span>
                                 </div>
-                                <div class="card-status">@CardStatus(state)</div>
+                                <div class="card-status">@CardStatus(state, required.Contains(card.Es))</div>
 
                                 @if (!flipped)
                                 {
@@ -146,14 +156,14 @@ else
                                             @card.Example
                                         }
                                     </div>
-                                    <div class="card-hint">Say the Spanish word, then tap to check</div>
+                                    <div class="card-hint">@(choiceMode ? "Pick the Spanish word below" : "Say the Spanish word, then tap to check")</div>
                                 }
                                 else if (!flipped)
                                 {
                                     @* Spanish first *@
                                     <SpanishWord Word="card" />
                                     <div class="card-example">@card.Example</div>
-                                    <div class="card-hint">Tap to see the meaning</div>
+                                    <div class="card-hint">@(choiceMode ? "Pick the meaning below" : "Tap to see the meaning")</div>
                                 }
                                 else
                                 {
@@ -200,11 +210,41 @@ else
                             }
                         </div>
 
-                        <div class="actions">
-                            <button type="button" class="act learning" @onclick="() => AnswerForgot(card)">Still learning</button>
-                            <button type="button" class="act skip" @onclick="() => Skip(card)">Skip</button>
-                            <button type="button" class="act known" @onclick="() => AnswerKnow(card)">I know it</button>
-                        </div>
+                        @if (choiceMode && picked is null)
+                        {
+                            @* Multiple choice: 4 options *@
+                            <div class="choices" role="group" aria-label="@(kind == ChoiceKind.Spanish ? "Choose the Spanish word" : "Choose the meaning")">
+                                @foreach (var opt in choices)
+                                {
+                                    <button type="button" class="choice @(kind == ChoiceKind.Spanish ? "es" : "")" @onclick="() => Choose(opt)">
+                                        @(kind == ChoiceKind.Spanish ? opt.Es : opt.En)
+                                    </button>
+                                }
+                            </div>
+                            <button type="button" class="skip-link" @onclick="() => Skip(card)">Skip</button>
+                        }
+                        else if (choiceMode)
+                        {
+                            <div class="choices" aria-live="polite">
+                                @foreach (var opt in choices)
+                                {
+                                    <div class="choice @(kind == ChoiceKind.Spanish ? "es" : "") @(opt == card ? "right" : opt == picked ? "wrong" : "dim")">
+                                        @(kind == ChoiceKind.Spanish ? opt.Es : opt.En)
+                                    </div>
+                                }
+                            </div>
+                            <button type="button" class="primary wide" @onclick="() => ContinueAfterChoice(card)">
+                                @(picked == card ? "Correct! Continue" : "Continue")
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="actions">
+                                <button type="button" class="act learning" @onclick="() => AnswerForgot(card)">Still learning</button>
+                                <button type="button" class="act skip" @onclick="() => Skip(card)">Skip</button>
+                                <button type="button" class="act known" @onclick="() => AnswerKnow(card)">I know it</button>
+                            </div>
+                        }
                         <p class="notice" role="status">@notice</p>
                     </div>
                 }
@@ -225,13 +265,30 @@ else
                     </div>
                 }
             }
+            else if (tab == Tab.Games)
+            {
+                <GamesHub AllWords="words" GroupWords="groupWords" GroupLabel="@group.Label"
+                          StateOf="State" Progress="progress" OnProgressChanged="SaveProgress" />
+            }
             else
             {
                 var isLearnedTab = tab == Tab.Learned;
                 var items = groupWords.Where(w => Srs.IsLearned(State(w)) == isLearnedTab).ToList();
 
                 <div class="list-screen">
-                    <section class="backup" aria-label="Export and import">
+                    <section class="backup" aria-label="Settings and progress">
+                        <div class="backup-row">
+                            <label class="backup-title" for="daily-limit">Daily reviews</label>
+                            <select id="daily-limit" class="small-select" @bind="progress.DailyReviewLimit" @bind:after="SaveProgress">
+                                <option value="10">10 a day</option>
+                                <option value="20">20 a day</option>
+                                <option value="30">30 a day</option>
+                                <option value="50">50 a day</option>
+                                <option value="100">100 a day</option>
+                                <option value="0">No limit</option>
+                            </select>
+                        </div>
+                        <p class="backup-msg">The most reviews you have to do each day. Anything over it shows up as optional extra reviews.</p>
                         <div class="backup-row">
                             <span class="backup-title">Your progress</span>
                             <div class="backup-buttons">
@@ -252,7 +309,7 @@ else
                     <p class="list-hint">
                         @(isLearnedTab
                             ? "Words land here after you answer them in Spanish on schedule up to level 4, or when you tap Mark learned (those never come back). Tap Relearn to practice a word again."
-                            : "New words start as Spanish → English. At level 2 they switch: you see the English and answer in Spanish.")
+                            : "New words start with picking the English meaning. At level 2 they switch: you see the English and answer in Spanish.")
                     </p>
 
                     @if (items.Count == 0)
@@ -276,6 +333,10 @@ else
                                             }
                                             <span class="row-word @w.GenderClass">@w.Es</span>
                                             <span class="badge @BadgeClass(State(w))">@Srs.StageLabel(State(w))</span>
+                                            @if (Srs.IsTricky(State(w)))
+                                            {
+                                                <span class="badge tricky">tricky</span>
+                                            }
                                         </div>
                                         <div class="row-sub">@w.En · @Srs.DueLabel(State(w), today)@(Srs.IsNew(State(w)) || Srs.IsRetired(State(w)) ? "" : Srs.AsksForSpanish(State(w)) ? " · answer in Spanish" : " · answer in English")</div>
                                     </div>
@@ -296,7 +357,7 @@ else
             <button type="button" class="tab @(tab == Tab.Study ? "on" : "")" aria-pressed="@(tab == Tab.Study ? "true" : "false")" @onclick="() => SetTab(Tab.Study)">
                 <span class="tab-pill">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="14" height="14" rx="2" /><path d="M7 3h12a2 2 0 0 1 2 2v12" /></svg>
-                    <span class="tab-count" title="Due for review">@groupDue</span>
+                    <span class="tab-count" title="Reviews left today">@groupRequired</span>
                 </span>
                 Flashcards
             </button>
@@ -314,13 +375,20 @@ else
                 </span>
                 Learned
             </button>
+            <button type="button" class="tab @(tab == Tab.Games ? "on" : "")" aria-pressed="@(tab == Tab.Games ? "true" : "false")" @onclick="() => SetTab(Tab.Games)">
+                <span class="tab-pill">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+                </span>
+                Games
+            </button>
         </nav>
     </div>
 }
 
 @code {
-    private enum Tab { Study, ToLearn, Learned }
+    private enum Tab { Study, ToLearn, Learned, Games }
     private enum Mode { Review, Practice }
+    private enum ChoiceKind { None, English, Spanish }
 
     private sealed record GroupDef(string Id, string Label, string Section, Func<Word, bool> Includes);
 
@@ -339,6 +407,11 @@ else
     private readonly HashSet<string> skipped = new();
     private string? notice;
     private bool canSpeak;
+
+    // Multiple choice for the card on screen
+    private string? choiceKey;
+    private List<Word> choices = new();
+    private Word? picked;
 
     private string? transferMessage;
     private bool transferError;
@@ -370,9 +443,13 @@ else
         if (canSpeak) StateHasChanged();
     }
 
-    private static List<GroupDef> BuildGroups(IReadOnlyList<Word> all)
+    private List<GroupDef> BuildGroups(IReadOnlyList<Word> all)
     {
-        var list = new List<GroupDef> { new("all", $"All {all.Count:N0} words", "", _ => true) };
+        var list = new List<GroupDef>
+        {
+            new("all", $"All {all.Count:N0} words", "", _ => true),
+            new("tricky", "Tricky words (forgotten often)", "", w => Srs.IsTricky(State(w))),
+        };
         for (var start = 1; start <= all.Count; start += 100)
         {
             var band = Word.BandFor(start);
@@ -398,23 +475,66 @@ else
 
     private int Percent => words is { Count: > 0 } ? (int)Math.Round(LearnedCount * 100.0 / words.Count) : 0;
 
+    private string Kicker => tab switch
+    {
+        Tab.Study => "Palabras",
+        Tab.Games => "Play",
+        _ => "Your words",
+    };
+
     private string ScreenTitle => tab switch
     {
         Tab.Study => mode == Mode.Review ? "Review" : "Practice",
         Tab.ToLearn => "To learn",
+        Tab.Games => "Games",
         _ => "Learned",
     };
 
-    /// <summary>Due cards first (oldest first), then new cards in frequency order. Skipped cards go last.</summary>
-    private List<Word> ReviewQueue(List<Word> groupWords)
+    /// <summary>Start a fresh daily review counter when the day changes.</summary>
+    private void EnsureReviewDay()
+    {
+        today = Srs.Today;
+        if (progress.ReviewDay != today)
+        {
+            progress.ReviewDay = today;
+            progress.ReviewsDoneToday = 0;
+        }
+    }
+
+    /// <summary>
+    /// The due reviews you HAVE to do today, across all words: up to the daily limit minus what
+    /// you've already done. Lower levels and the most overdue words go first; the rest wait as
+    /// optional extras and roll forward to later days.
+    /// </summary>
+    private HashSet<string> RequiredReviewIds()
+    {
+        var limit = progress.DailyReviewLimit;
+        var left = limit <= 0 ? int.MaxValue : Math.Max(0, limit - progress.ReviewsDoneToday);
+        if (left == 0 || words is null) return new HashSet<string>();
+        return words
+            .Where(w => Srs.IsDue(State(w), today))
+            .OrderBy(w => State(w)!.Box)
+            .ThenBy(w => State(w)!.Due)
+            .ThenBy(w => w.Rank)
+            .Take(left)
+            .Select(w => w.Es)
+            .ToHashSet();
+    }
+
+    /// <summary>Required reviews first, then new words, then optional extra reviews. Skipped cards go last.</summary>
+    private List<Word> ReviewQueue(List<Word> groupWords, HashSet<string> required)
     {
         var due = groupWords
             .Where(w => Srs.IsDue(State(w), today))
-            .OrderBy(w => State(w)!.Due)
+            .OrderBy(w => State(w)!.Box)
+            .ThenBy(w => State(w)!.Due)
             .ThenBy(w => State(w)!.LastSeen ?? DateTime.MinValue)
-            .ThenBy(w => w.Rank);
+            .ThenBy(w => w.Rank)
+            .ToList();
+        var must = due.Where(w => required.Contains(w.Es));
+        var extra = due.Where(w => !required.Contains(w.Es));
         var fresh = groupWords.Where(w => Srs.IsNew(State(w))).OrderBy(w => w.Rank);
-        var all = due.Concat(fresh).ToList();
+        var all = must.Concat(fresh).Concat(extra).ToList();
         return all.Where(w => !skipped.Contains(w.Es)).Concat(all.Where(w => skipped.Contains(w.Es))).ToList();
     }
 
@@ -445,17 +565,30 @@ else
         return dates.Count == 0 ? null : dates.Min();
     }
 
-    private string CardStatus(CardState? s)
+    /// <summary>How many cards are already due on each day (used to spread out new review dates).</summary>
+    private Dictionary<DateOnly, int> LoadByDay() =>
+        progress.Cards.Values
+            .Where(c => c.Box > 0 && !c.Retired)
+            .GroupBy(c => c.Due)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+    private string CardStatus(CardState? s, bool isRequired)
     {
         if (Srs.IsNew(s)) return "New word";
-        if (Srs.IsDue(s, today)) return $"{Srs.StageLabel(s)} · due now";
-        return $"{Srs.StageLabel(s)} · practice only ({Srs.DueLabel(s, today)})";
+        var tricky = Srs.IsTricky(s) ? " · tricky" : "";
+        if (Srs.IsDue(s, today)) return $"{Srs.StageLabel(s)} · {(isRequired || mode == Mode.Practice ? "due now" : "extra review")}{tricky}";
+        return $"{Srs.StageLabel(s)} · practice only ({Srs.DueLabel(s, today)}){tricky}";
     }
 
-    private string CardAria(Word w)
+    private string CardAria(Word w, bool choiceMode)
     {
-        if (flipped) return $"Answer: {w.SpanishWithArticle}, {w.En}. Tap to flip back.";
-        return EnglishFirstFor(State(w))
+        if (flipped) return $"Answer: {w.SpanishWithArticle}, {w.En}.";
+        var english = EnglishFirstFor(State(w));
+        if (choiceMode)
+            return english
+                ? $"English: {w.En}. Choose the Spanish word below."
+                : $"Spanish: {w.SpanishWithArticle}. Choose the meaning below.";
+        return english
             ? $"English: {w.En}. Answer in Spanish, then tap to check."
             : $"Spanish: {w.SpanishWithArticle}. Answer in English, then tap to check.";
     }
@@ -471,6 +604,76 @@ else
         if (mode == Mode.Practice && progress.PracticeDirection == "es") return false;
         return Srs.AsksForSpanish(s);
     }
+
+    /// <summary>
+    /// Multiple choice on the early levels: new / level 1 (Spanish shown) → pick the English meaning;
+    /// level 2 (English + blanked sentence shown) → pick the Spanish word. From level 3 you recall it yourself.
+    /// </summary>
+    private static ChoiceKind ChoiceKindFor(CardState? s, bool englishFirst)
+    {
+        var level = s?.Box ?? 0;
+        if (!englishFirst && level <= 1) return ChoiceKind.English;
+        if (englishFirst && level == Srs.RecallLevel) return ChoiceKind.Spanish;
+        return ChoiceKind.None;
+    }
+
+    /// <summary>Builds the 4 options once per card (so they don't reshuffle while you look at them).</summary>
+    private void EnsureChoices(Word card, ChoiceKind kind, CardState? s)
+    {
+        var key = $"{card.Es}|{kind}|{s?.Box ?? 0}|{s?.LastSeen?.Ticks ?? 0}";
+        if (key == choiceKey) return;
+        choiceKey = key;
+        picked = null;
+        choices = MakeChoices(card, kind);
+    }
+
+    /// <summary>
+    /// The right answer plus 3 believable wrong ones: same part of speech (and same topic when possible).
+    /// For Spanish nouns, prefer the same article so "la ____" doesn't give the answer away.
+    /// Meanings that overlap with the right answer ("time" vs "time; weather") are skipped.
+    /// </summary>
+    private List<Word> MakeChoices(Word card, ChoiceKind kind)
+    {
+        var meaning = MeaningParts(card.En);
+        var pool = words!
+            .Where(w => w.Es != card.Es && w.En != card.En && !MeaningParts(w.En).Overlaps(meaning))
+            .OrderBy(_ => Random.Shared.Next())
+            .ToList();
+
+        bool SamePos(Word w) => w.Pos == card.Pos;
+        bool SameTopic(Word w) => w.Topic == card.Topic;
+        bool SameArticle(Word w) => kind != ChoiceKind.Spanish || !card.IsNoun || w.Article == card.Article;
+
+        var tiers = new[]
+        {
+            pool.Where(w => SamePos(w) && SameArticle(w) && SameTopic(w)),
+            pool.Where(w => SamePos(w) && SameArticle(w)),
+            pool.Where(SamePos),
+            pool,
+        };
+
+        var picks = new List<Word>();
+        foreach (var tier in tiers)
+        {
+            foreach (var w in tier)
+            {
+                if (picks.Count == 3) break;
+                if (picks.Contains(w) || picks.Any(p => p.En == w.En || p.Es == w.Es)) continue;
+                picks.Add(w);
+            }
+            if (picks.Count == 3) break;
+        }
+
+        picks.Add(card);
+        return picks.OrderBy(_ => Random.Shared.Next()).ToList();
+    }
+
+    private static HashSet<string> MeaningParts(string en) =>
+        en.Split(new[] { ',', ';', '/', '(', ')' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+          .Select(p => p.ToLowerInvariant())
+          .Select(p => p.StartsWith("to ") ? p[3..].Trim() : p)
+          .Where(p => p.Length > 0)
+          .ToHashSet();
 
     private string PracticeDirectionLabel => progress.PracticeDirection switch
     {
@@ -494,7 +697,16 @@ else
 
     // ----- actions -----
 
+    private Task SaveProgress() => Store.SaveAsync(progress);
+
     private void Flip() => flipped = !flipped;
+
+    private void ResetCardView()
+    {
+        flipped = false;
+        picked = null;
+        choiceKey = null;
+    }
 
     private void SetTab(Tab t)
     {
@@ -506,7 +718,7 @@ else
     {
         mode = m;
         tab = Tab.Study;
-        flipped = false;
+        ResetCardView();
         notice = null;
         skipped.Clear();
     }
@@ -514,7 +726,7 @@ else
     private async Task OnGroupChanged()
     {
         practiceIdx = 0;
-        flipped = false;
+        ResetCardView();
         notice = null;
         skipped.Clear();
         progress.Group = groupId;
@@ -536,7 +748,7 @@ else
             "es" => "en",
             _ => "auto",
         };
-        flipped = false;
+        ResetCardView();
         await Store.SaveAsync(progress);
     }
 
@@ -545,15 +757,36 @@ else
         if (mode == Mode.Practice) practiceIdx++;
         else skipped.Add(card.Es);
         lastAnswered = card.Es;
-        flipped = false;
+        ResetCardView();
         notice = null;
+    }
+
+    private void Choose(Word option)
+    {
+        picked = option;
+        flipped = true; // show the full answer side
+    }
+
+    private async Task ContinueAfterChoice(Word card)
+    {
+        if (picked == card) await AnswerKnow(card);
+        else await AnswerForgot(card);
+    }
+
+    /// <summary>Counts a review toward today's required reviews when the card was due.</summary>
+    private void CountReview(CardState? before)
+    {
+        if (!Srs.IsDue(before, today)) return;
+        EnsureReviewDay();
+        progress.ReviewsDoneToday++;
     }
 
     private async Task AnswerKnow(Word card)
     {
         today = Srs.Today;
         var before = State(card);
-        var next = Srs.Know(before, today);
+        var next = Srs.Know(before, today, LoadByDay());
+        CountReview(before);
         if (next is null)
         {
             notice = $"Practice only: “{card.Es}” isn't due yet ({Srs.DueLabel(before, today)}), so its level stays the same.";
@@ -574,11 +807,14 @@ else
     private async Task AnswerForgot(Word card)
     {
         today = Srs.Today;
-        var next = Srs.Forgot(State(card), today);
+        var before = State(card);
+        var next = Srs.Forgot(before, today);
+        CountReview(before);
         progress.Cards[card.Es] = next;
-        notice = Srs.AsksForSpanish(next)
-            ? $"“{card.Es}” is back to level {next.Box} (still answering in Spanish) and will come up again today."
-            : $"“{card.Es}” is back to level 1 and will come up again today.";
+        var correct = picked is not null && picked != card ? $"It's “{card.Es}” = {card.En}. " : "";
+        notice = correct + (Srs.AsksForSpanish(next)
+            ? $"Back to level {next.Box} (still answering in Spanish); it comes up again today."
+            : "Back to level 1; it comes up again today.");
         AfterAnswer(card);
         await Store.SaveAsync(progress);
     }
@@ -587,7 +823,7 @@ else
     {
         lastAnswered = card.Es;
         skipped.Remove(card.Es);
-        flipped = false;
+        ResetCardView();
         if (mode == Mode.Practice) practiceIdx++;
     }
 
@@ -604,7 +840,7 @@ else
         Random.Shared.Shuffle(ids);
         progress.Order = ids.ToList();
         practiceIdx = 0;
-        flipped = false;
+        ResetCardView();
         await Store.SaveAsync(progress);
     }
 
@@ -641,7 +877,7 @@ else
             var result = ProgressTransfer.Import(text, e.File.Name, words!);
             progress.Cards = result.Cards;
             practiceIdx = 0;
-            flipped = false;
+            ResetCardView();
             skipped.Clear();
             await Store.SaveAsync(progress);
 
@@ -665,8 +901,9 @@ else
     {
         progress.Cards = new();
         progress.Order = null;
+        progress.ReviewsDoneToday = 0;
         practiceIdx = 0;
-        flipped = false;
+        ResetCardView();
         skipped.Clear();
         notice = null;
         await Store.SaveAsync(progress);

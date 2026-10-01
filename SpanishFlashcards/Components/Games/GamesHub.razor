@@ -1,0 +1,76 @@
+@* The Games area: a list of games, and the selected game. Add new games to the Games list below. *@
+
+@if (selected is null)
+{
+    <div class="games">
+        <p class="list-hint">
+            Games use words from <strong>@GroupLabel</strong> (change it with the picker above).
+            They're for fun and practice: they don't change your review levels.
+        </p>
+
+        @foreach (var g in Games)
+        {
+            <button type="button" class="game-card" @onclick="() => Open(g.Id)">
+                <span class="game-icon" aria-hidden="true">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+                </span>
+                <span class="game-text">
+                    <span class="game-title">@g.Title</span>
+                    <span class="game-desc">@g.Description</span>
+                    <span class="game-best">Best: @BestFor(g.Id)</span>
+                </span>
+            </button>
+        }
+    </div>
+}
+else
+{
+    <div class="games">
+        <button type="button" class="tool back-btn" @onclick="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            All games
+        </button>
+
+        @if (selected == MatchRaceId)
+        {
+            <MatchRace AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
+                       Best="BestFor(MatchRaceId)" OnFinished="score => SaveScore(MatchRaceId, score)" />
+        }
+    </div>
+}
+
+@code {
+    private const string MatchRaceId = "match-race";
+
+    private sealed record GameInfo(string Id, string Title, string Description);
+
+    private static readonly List<GameInfo> Games =
+    [
+        new(MatchRaceId, "Match race",
+            "Match Spanish to English as fast as you can in 60 seconds. Words you've seen but don't know yet come up most."),
+    ];
+
+    [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;
+    [Parameter] public string GroupLabel { get; set; } = "";
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public EventCallback OnProgressChanged { get; set; }
+
+    private string? selected;
+
+    private void Open(string id) => selected = id;
+
+    private void Close() => selected = null;
+
+    private int BestFor(string id) => Progress.GameBests.GetValueOrDefault(id);
+
+    private async Task SaveScore(string id, int score)
+    {
+        if (score > BestFor(id))
+        {
+            Progress.GameBests[id] = score;
+            await OnProgressChanged.InvokeAsync();
+        }
+    }
+}
