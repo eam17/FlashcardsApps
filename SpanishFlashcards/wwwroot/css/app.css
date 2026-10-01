@@ -170,7 +170,7 @@ h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 32px; 
     transition: background-color .2s ease, border-color .2s ease;
 }
 .card.front { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
-.card.back { background: #F1F4FF; color: var(--ink); border: 2px solid var(--accent); }
+.card.back { background: #D3DEFF; color: var(--ink); border: 2px solid var(--accent); }
 .card-meta {
     position: absolute;
     top: 16px;
