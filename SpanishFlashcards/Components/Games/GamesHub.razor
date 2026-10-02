@@ -4,22 +4,29 @@
 @if (selected is null)
 {
     <div class="games">
-        <p class="list-hint">
-            Games use words from <strong>@GroupLabel</strong> (change it with the picker above). Tricky words and
-            words you're learning come up most, with an easy one now and then. Games don't change your review levels.
-        </p>
+        <section class="games-section" aria-labelledby="games-vocab">
+            <h2 class="games-heading" id="games-vocab">Vocabulary</h2>
+            <p class="list-hint">
+                Games use words from <strong>@GroupLabel</strong> (change it with the picker above). Tricky words and
+                words you're learning come up most, with an easy one now and then. Games don't change your review levels.
+            </p>
+            @foreach (var g in Games.Where(x => x.Kind == GameKind.Vocab))
+            {
+                @Card(g)
+            }
+        </section>
 
-        @foreach (var g in Games)
-        {
-            <button type="button" class="game-card" @onclick="() => Open(g.Id)">
-                <span class="game-icon" aria-hidden="true">@g.Icon</span>
-                <span class="game-text">
-                    <span class="game-title">@g.Title</span>
-                    <span class="game-desc">@g.Description</span>
-                    <span class="game-best">Best: @BestFor(g.Id)@g.BestSuffix</span>
-                </span>
-            </button>
-        }
+        <section class="games-section games-verbs" aria-labelledby="games-verbs">
+            <h2 class="games-heading" id="games-verbs">Verbs</h2>
+            <p class="list-hint">
+                Verb games use the most common verbs (Settings → Verbs decides about vosotros). Forms you miss come
+                back in the Verbs tab: in practice, or in Decode for the reading games.
+            </p>
+            @foreach (var g in Games.Where(x => x.Kind == GameKind.Verbs))
+            {
+                @Card(g)
+            }
+        </section>
     </div>
 }
 else
@@ -52,6 +59,31 @@ else
                 <FillIn AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
                         Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
                 break;
+            case "who-talking":
+                <WhoTalking Progress="Progress" OnSaved="Saved" Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "what-means":
+                <WhatMeans Progress="Progress" OnSaved="Saved" Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "tense-sort":
+                <TenseSort Progress="Progress" OnSaved="Saved" Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "stem-match":
+                <StemMatch Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "clue-words":
+                <ClueWords Progress="Progress" OnSaved="Saved" Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "build-it":
+                <BuildIt Progress="Progress" OnSaved="Saved" Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "boss":
+                <BossBattle Progress="Progress" OnSaved="Saved" OnFinished="score => SaveScore(selected, score)" />
+                break;
+            case "ping-pong":
+                <PingPong Progress="Progress" CanSpeak="CanSpeak" Speak="Speak" OnSaved="Saved"
+                          Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
+                break;
             case "word-builder":
                 <WordBuilder AllWords="AllWords" GroupWords="GroupWords" StateOf="StateOf"
                              Best="BestFor(selected)" OnFinished="score => SaveScore(selected, score)" />
@@ -61,23 +93,59 @@ else
 }
 
 @code {
-    private sealed record GameInfo(string Id, string Title, string Description, string Icon, string BestSuffix = "");
+    private enum GameKind { Vocab, Verbs }
+
+    private sealed record GameInfo(string Id, string Title, string Description, string Icon, GameKind Kind, string BestSuffix = "");
 
     private static readonly List<GameInfo> Games =
     [
         new("match-race", "Match race",
-            "Match Spanish to English against the clock (60 s). Wrong pairs cost 3 seconds.", "⇄"),
+            "Match Spanish to English against the clock (60 s). Wrong pairs cost 3 seconds.", "⇄", GameKind.Vocab),
         new("gender-sort", "Gender sort",
-            "A noun appears. Tap el or la as fast as you can (60 s).", "el/la"),
+            "A noun appears. Tap el or la as fast as you can (60 s).", "el/la", GameKind.Vocab),
         new("true-false", "True or false",
-            "Does the Spanish word match the English? Swipe right for True, left for False (60 s).", "✓✗"),
+            "Does the Spanish word match the English? Swipe right for True, left for False (60 s).", "✓✗", GameKind.Vocab),
         new("listen", "Listen and tap",
-            "Hear a Spanish word and pick its meaning. 10 words, no reading.", "♪", " / 10"),
+            "Hear a Spanish word and pick its meaning. 10 words, no reading.", "♪", GameKind.Vocab, " / 10"),
         new("fill-in", "Fill the gap",
-            "A Spanish sentence with a missing word, 6 Spanish options, no English (60 s).", "_ _"),
+            "A Spanish sentence with a missing word, 6 Spanish options, no English (60 s).", "_ _", GameKind.Vocab),
         new("word-builder", "Word builder",
-            "See the English, tap the scrambled letters to spell the Spanish. 8 words.", "abc", " / 24"),
+            "See the English, tap the scrambled letters to spell the Spanish. 8 words.", "abc", GameKind.Vocab, " / 24"),
+
+        new("who-talking", "Who's talking?",
+            "A verb form appears: tap who's doing it, from the ending alone (60 s).", "-mos", GameKind.Verbs),
+        new("what-means", "What does it mean?",
+            "A verb form appears: pick the English, like \"we had\" or \"I will speak\" (60 s).", "?", GameKind.Verbs),
+        new("tense-sort", "Tense sort",
+            "Two look-alike tenses, like preterite and imperfect. Sort each form into the right one (60 s).", "⇆", GameKind.Verbs),
+        new("stem-match", "Stem match",
+            "Match strange stems to their verbs: tuv- is tener, querr- is querer (60 s).", "tuv-", GameKind.Verbs),
+        new("clue-words", "Clue words",
+            "A sentence with a missing verb. The clue word (ayer, de niño, ojalá…) tells you the tense. 10 sentences.", "ayer", GameKind.Verbs, " / 10"),
+        new("ping-pong", "Ping-pong",
+            "A person is called out (yo, nosotros…): tap the right form fast. Pick the tense (60 s).", "yo→o", GameKind.Verbs),
+        new("build-it", "Build it",
+            "Snap a stem and an ending together to build the form: habl + ábamos. 10 forms.", "+", GameKind.Verbs, " / 10"),
+        new("boss", "Boss battle",
+            "Fight a tough verb like ser or tener: right forms hit it, mistakes cost a heart. Beat them all.", "👑", GameKind.Verbs),
     ];
+
+    /// <summary>A game in the list.</summary>
+    private RenderFragment Card(GameInfo g) =>
+        @<button type="button" class="game-card" @onclick="() => Open(g.Id)">
+            <span class="game-icon" aria-hidden="true">@g.Icon</span>
+            <span class="game-text">
+                <span class="game-title">@g.Title</span>
+                <span class="game-desc">@g.Description</span>
+                <span class="game-best">@BestText(g)</span>
+            </span>
+        </button>;
+
+    private string BestText(GameInfo g) => g.Id == "boss"
+        ? $"Bosses beaten: {Progress.GameBests.Count(kv => kv.Key.StartsWith("boss-", StringComparison.Ordinal) && kv.Value > 0)}"
+        : $"Best: {BestFor(g.Id)}{g.BestSuffix}";
+
+    private Task Saved() => OnProgressChanged.InvokeAsync();
 
     [Parameter, EditorRequired] public IReadOnlyList<Word> AllWords { get; set; } = default!;
     [Parameter, EditorRequired] public List<Word> GroupWords { get; set; } = default!;

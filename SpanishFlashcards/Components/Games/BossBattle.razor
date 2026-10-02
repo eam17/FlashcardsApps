@@ -1,0 +1,208 @@
+@* Boss battle: one tough verb (ser, ir, tener…) is the boss. Each right form knocks off a chunk of its
+   health (more on a streak); each wrong one costs you a heart. Beat it before your 3 hearts run out.
+   Beaten bosses get a crown. *@
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro pp-intro">
+        <div class="race-title">Boss battle</div>
+        <p>Pick a tough verb to fight. You're asked its forms in the tenses you choose: every right answer hits the boss
+           (three in a row hit twice as hard), every wrong one costs you a heart. You have <strong>3 hearts</strong>.</p>
+        <div class="pp-setting">
+            <div class="dc-q-title">Boss</div>
+            <div class="dc-chips">
+                @foreach (var inf in Bosses.Where(b => book.ByInf.ContainsKey(b)))
+                {
+                    var x = inf;
+                    <button type="button" class="chip @(boss == x ? "on" : "")" aria-pressed="@(boss == x ? "true" : "false")" @onclick="() => boss = x">
+                        @x@(Beaten(x) ? " 👑" : "")
+                    </button>
+                }
+            </div>
+        </div>
+        <TenseChips Allowed="Allowed" Selected="tenses" />
+        <p class="small">@($"Bosses beaten: {Bosses.Count(b => Beaten(b))} of {Bosses.Length}")</p>
+        <button type="button" class="primary" @onclick="Start">Fight @boss</button>
+    </div>
+}
+else if (phase == Phase.Playing && q is not null)
+{
+    var person = VerbGrammar.PersonsFor(q.Tense)[q.Person];
+    <div class="race">
+        <div class="bb-arena">
+            <div class="bb-boss @(hitFlash ? "hit" : "")" @key="hits">
+                <div class="bb-name" lang="es">@q.Verb.Inf</div>
+                <div class="bb-hp" aria-label="@($"Boss health {hp} of {MaxHp}")"><div class="bb-hp-fill" style="width: @(hp * 100 / MaxHp)%"></div></div>
+            </div>
+            <div class="bb-hearts" aria-label="@($"{hearts} hearts left")">
+                @for (var i = 0; i < MaxHearts; i++)
+                {
+                    <span class="bb-heart @(i < hearts ? "" : "lost")" aria-hidden="true">♥</span>
+                }
+            </div>
+        </div>
+
+        <div class="game-prompt pp-card">
+            <div class="pp-en">@(VerbGrammar.TenseById[q.Tense].Name)</div>
+            <div class="pp-call" lang="es" @key="asked">@(person.Negative ? person.Label.Replace(", negative", "") + ": no …" : person.Label)</div>
+        </div>
+
+        @if (lastText is null)
+        {
+            <div class="game-feedback empty" aria-hidden="true"></div>
+        }
+        else
+        {
+            <div @key="asked" class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word">@lastText</span>
+            </div>
+        }
+
+        <div class="pp-options">
+            @foreach (var option in q.Options)
+            {
+                var o = option;
+                <button type="button" class="race-tile es pp-option" lang="es" @onclick="() => Answer(o)">@o</button>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="race-intro">
+        <div class="race-title">@(won ? $"You beat {boss}! 👑" : $"{boss} wins this time")</div>
+        <p>@(won ? $"{asked} questions, {MaxHearts - hearts} mistake{(MaxHearts - hearts == 1 ? "" : "s")}." : $"You got the boss down to {hp * 100 / MaxHp}% health.")</p>
+        <p class="small">@($"Bosses beaten: {Bosses.Count(b => Beaten(b))} of {Bosses.Length}")</p>
+        @if (missed.Count > 0)
+        {
+            <div class="race-mistakes">
+                <div class="small"><strong>To look at again</strong> (they come up in the Verbs tab too)</div>
+                @foreach (var (es, note) in missed)
+                {
+                    <div class="race-mistake"><strong lang="es">@es</strong> <span class="small">@note</span></div>
+                }
+            </div>
+        }
+        <div class="pp-again">
+            <button type="button" class="primary" @onclick="Start">@(won ? "Fight again" : "Rematch")</button>
+            <button type="button" class="tool" @onclick="() => phase = Phase.Ready">Choose another boss</button>
+        </div>
+    </div>
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private sealed record Question(Verb Verb, string Tense, int Person, string Right, IReadOnlyList<string> Answers, IReadOnlyList<string> Options);
+
+    private const int MaxHp = 12;
+    private const int MaxHearts = 3;
+    private static readonly string[] Bosses = ["ser", "estar", "ir", "tener", "hacer", "decir", "poder", "querer", "venir", "saber", "poner", "salir", "dar", "ver", "haber"];
+    private static readonly string[] Allowed = VerbGrammar.Tenses.Select(t => t.Id).ToArray();
+    private static readonly HashSet<string> tenses = ["pres", "pret", "impf"];
+    private static string boss = "ser";
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    /// <summary>Called with the number of bosses beaten so far.</summary>
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private VerbBook? book;
+    private string? loadError;
+    private Phase phase = Phase.Ready;
+    private Question? q;
+    private string? lastText;
+    private bool lastRight, won, hitFlash;
+    private int hp, hearts, streak, asked, hits;
+    private readonly List<(string, string)> missed = new();
+    private readonly Queue<string> recent = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (book, _) = await VerbRepo.GetAsync(); }
+        catch (Exception ex) { loadError = $"Couldn't load the verbs: {ex.Message}"; }
+    }
+
+    private bool Beaten(string inf) => Progress.GameBests.GetValueOrDefault("boss-" + inf) > 0;
+
+    private void Start()
+    {
+        hp = MaxHp;
+        hearts = MaxHearts;
+        streak = asked = hits = 0;
+        won = false;
+        missed.Clear();
+        recent.Clear();
+        lastText = null;
+        phase = Phase.Playing;
+        Ask();
+    }
+
+    /// <summary>A form of the boss in one of the chosen tenses, not one of the last few asked.</summary>
+    private void Ask()
+    {
+        var v = book!.ByInf[boss];
+        for (var tries = 0; tries < 40; tries++)
+        {
+            var t = tenses.ElementAt(Random.Shared.Next(tenses.Count));
+            if (!v.Has(t) || VerbGameKit.PickPerson(v, t) is not { } p) continue;
+            var key = $"{t}|{p}";
+            if (recent.Contains(key) && tries < 30) continue;
+            recent.Enqueue(key);
+            while (recent.Count > 6) recent.Dequeue();
+            var answers = v.Answers(t, p);
+            var right = answers[0];
+            var options = VerbQuiz.Options(v, t, p, answers, book!).Where(o => o != right).Take(3).Append(right)
+                .OrderBy(_ => Random.Shared.Next()).ToList();
+            q = new Question(v, t, p, right, answers, options);
+            return;
+        }
+    }
+
+    private async Task Answer(string picked)
+    {
+        if (phase != Phase.Playing || q is null) return;
+        asked++;
+        lastRight = q.Answers.Contains(picked);
+        var person = VerbGrammar.PersonsFor(q.Tense)[q.Person];
+        var shown = (person.Negative ? "no " : "") + q.Right;
+        if (lastRight)
+        {
+            streak++;
+            var damage = streak >= 3 ? 2 : 1;
+            hp = Math.Max(0, hp - damage);
+            hits++;
+            hitFlash = true;
+            lastText = damage > 1 ? $"{shown}: double hit!" : shown;
+        }
+        else
+        {
+            streak = 0;
+            hearts--;
+            hitFlash = false;
+            lastText = $"It's {shown}";
+            missed.Add((shown, $"{person.Label.Replace(", negative", "")}, {VerbGrammar.TenseById[q.Tense].Name.ToLowerInvariant()} (not {picked})"));
+            VerbGameKit.RecordMiss(Progress, VerbGameKit.PracticeKey(q.Verb, q.Tense, q.Person));
+            await OnSaved.InvokeAsync();
+        }
+
+        if (hp == 0 || hearts == 0)
+        {
+            won = hp == 0;
+            phase = Phase.Done;
+            if (won && !Beaten(boss))
+            {
+                Progress.GameBests["boss-" + boss] = 1;
+                await OnSaved.InvokeAsync();
+            }
+            await OnFinished.InvokeAsync(Bosses.Count(b => Beaten(b)));
+            return;
+        }
+        Ask();
+    }
+}

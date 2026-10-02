@@ -1,0 +1,156 @@
+@* Clue words: a sentence with a missing verb and a clue (ayer, de niño, ojalá…) that decides the tense.
+   Pick the right form; then see why. 10 sentences, no timer. Sentences in Models/Verbs/VerbClues.Data.cs. *@
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">Clue words</div>
+        <p>Each sentence is missing a verb. A clue word (<em lang="es">ayer</em>, <em lang="es">de niño</em>, <em lang="es">ojalá</em>…)
+           tells you which tense it needs. Pick the right form, then see why. <strong>@Rounds sentences</strong>, no timer.</p>
+        <p class="small">Best score: @Best / @Rounds</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && q is not null && verb is not null)
+{
+    var parts = q.Es.Split("___");
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score">@score right</div>
+            <div class="race-time">@(index + 1) / @Rounds</div>
+        </div>
+
+        <div class="game-prompt cw-card">
+            <div class="pp-en"><span lang="es">@verb.Inf</span> · @verb.En · @VerbGameKit.WhoShort(VerbGrammar.Persons[q.Person].Group)</div>
+            <div class="cw-sentence" lang="es">
+                @(Pieces(parts[0]))<span class="cw-blank @(answered ? (lastRight ? "ok" : "no") : "")">@(answered ? right : "___")</span>@(Pieces(parts.Length > 1 ? parts[1] : ""))
+            </div>
+            @if (answered)
+            {
+                <div class="st-en">@q.En</div>
+            }
+        </div>
+
+        @if (answered)
+        {
+            <div class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word">@RuleText.Render(q.Why)</span>
+            </div>
+            <button type="button" class="primary wide" @onclick="Next">@(index + 1 < Rounds ? "Next" : "See results")</button>
+        }
+        else
+        {
+            <div class="pp-options">
+                @foreach (var option in options)
+                {
+                    var o = option;
+                    <button type="button" class="race-tile es pp-option" lang="es" @onclick="() => Answer(o)">@o</button>
+                }
+            </div>
+        }
+    </div>
+}
+else
+{
+    <VerbGameResults Headline="@($"{score} / {Rounds}")" Score="score" PreviousBest="previousBest" Best="Best"
+                     Missed="missed" OnPlayAgain="Start" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private const int Rounds = 10;
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private VerbBook? book;
+    private string? loadError;
+    private Phase phase = Phase.Ready;
+    private List<ClueSentence> deck = new();
+    private ClueSentence? q;
+    private Verb? verb;
+    private string right = "";
+    private List<string> options = new();
+    private bool answered, lastRight;
+    private int index, score, previousBest;
+    private readonly List<(string, string)> missed = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (book, _) = await VerbRepo.GetAsync(); }
+        catch (Exception ex) { loadError = $"Couldn't load the verbs: {ex.Message}"; }
+    }
+
+    /// <summary>Sentence text with the clue words highlighted.</summary>
+    private RenderFragment Pieces(string text) => b =>
+    {
+        foreach (var (piece, clue) in VerbClues.Highlight(text, q!.Clue))
+        {
+            if (clue)
+            {
+                b.OpenElement(0, "mark");
+                b.AddAttribute(1, "class", "cw-clue");
+                b.AddContent(2, piece);
+                b.CloseElement();
+            }
+            else b.AddContent(3, piece);
+        }
+    };
+
+    private void Start()
+    {
+        score = index = 0;
+        previousBest = Best;
+        missed.Clear();
+        deck = VerbClues.Sentences.Where(s => book!.ByInf.ContainsKey(s.Inf) && VerbSettings.IsActive(s.Tense, s.Person))
+            .OrderBy(_ => Random.Shared.Next()).Take(Rounds).ToList();
+        phase = Phase.Playing;
+        Show();
+    }
+
+    private void Show()
+    {
+        answered = false;
+        q = deck[index];
+        verb = book!.ByInf[q.Inf];
+        right = verb.Form(q.Tense, q.Person) ?? "";
+        var wrong = VerbClues.Rivals.GetValueOrDefault(q.Tense, [])
+            .Select(t => verb.Form(t, q.Person)).OfType<string>()
+            .Where(f => !verb.Answers(q.Tense, q.Person).Contains(f)).Distinct().Take(3);
+        options = wrong.Append(right).OrderBy(_ => Random.Shared.Next()).ToList();
+    }
+
+    private void Answer(string picked)
+    {
+        if (answered || q is null || verb is null) return;
+        answered = true;
+        lastRight = verb.Answers(q.Tense, q.Person).Contains(picked);
+        if (lastRight) score++;
+        else
+        {
+            missed.Add((q.Es.Replace("___", right), $"({VerbGrammar.TenseById[q.Tense].Name.ToLowerInvariant()}, not {picked})"));
+            VerbGameKit.RecordMiss(Progress, VerbGameKit.PracticeKey(verb, q.Tense, q.Person));
+            _ = OnSaved.InvokeAsync();
+        }
+    }
+
+    private void Next()
+    {
+        index++;
+        if (index >= deck.Count)
+        {
+            phase = Phase.Done;
+            _ = OnFinished.InvokeAsync(score);
+            return;
+        }
+        Show();
+    }
+}

@@ -1,0 +1,216 @@
+@* Build it: "nosotros · imperfect · hablar". Pick the stem, then the ending, to build the form
+   (habl + ábamos). Decoys are real pieces of the same verb in other persons and tenses. 10 forms. *@
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro pp-intro">
+        <div class="race-title">Build it</div>
+        <p>You get a verb, a person and a tense. Tap the <strong>stem</strong>, then the <strong>ending</strong>, to build the form.
+           The wrong pieces are real pieces of the same verb, so look closely. <strong>@Rounds forms</strong>.</p>
+        <TenseChips Allowed="Allowed" Selected="tenses" />
+        <p class="small">Best score: @Best / @Rounds</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && item is not null)
+{
+    var person = VerbGrammar.PersonsFor(item.Tense)[item.Person];
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score">@score right</div>
+            <div class="race-time">@(index + 1) / @Rounds</div>
+        </div>
+
+        <div class="game-prompt pp-card">
+            <div class="pp-verb"><span lang="es">@item.Verb.Inf</span><span class="pp-en">@item.Verb.En</span></div>
+            <div class="pp-call" lang="es">@person.Label</div>
+            <div class="pp-en">@(VerbGrammar.TenseById[item.Tense].Name)</div>
+        </div>
+
+        <div class="gw-build" aria-live="polite">
+            @if (checkedAnswer)
+            {
+                <div class="gw-built @(lastRight ? "ok" : "no")" lang="es"><FormParts Verb="item.Verb" Tense="@item.Tense" Person="item.Person" Form="@item.Form" /></div>
+            }
+            else
+            {
+                <button type="button" class="gw-slot @(stem is null ? "empty" : "")" @onclick="() => stem = null">@(stem ?? "stem")</button>
+                <span class="gw-plus" aria-hidden="true">+</span>
+                <button type="button" class="gw-slot @(ending is null ? "empty" : "")" @onclick="() => ending = null">@(ending is null ? "ending" : "-" + ending)</button>
+            }
+        </div>
+
+        @if (checkedAnswer)
+        {
+            <div class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word">@(lastRight ? "Right!" : $"You built {tried}. It's {item.Stem} + -{item.Ending}.")</span>
+            </div>
+            <button type="button" class="primary wide" @onclick="Next">@(index + 1 < Rounds ? "Next" : "See results")</button>
+        }
+        else
+        {
+            <div class="dc-q-title">Stem</div>
+            <div class="gw-pieces">
+                @foreach (var s in item.Stems)
+                {
+                    var x = s;
+                    <button type="button" class="race-tile es @(stem == x ? "sel" : "")" lang="es" @onclick="() => PickStem(x)">@x</button>
+                }
+            </div>
+            <div class="dc-q-title">Ending</div>
+            <div class="gw-pieces">
+                @foreach (var e in item.Endings)
+                {
+                    var x = e;
+                    <button type="button" class="race-tile es @(ending == x ? "sel" : "")" lang="es" @onclick="() => PickEnding(x)">-@x</button>
+                }
+            </div>
+        }
+    </div>
+}
+else
+{
+    <VerbGameResults Headline="@($"{score} / {Rounds}")" Score="score" PreviousBest="previousBest" Best="Best"
+                     Missed="missed" OnPlayAgain="Start" OnSettings="() => phase = Phase.Ready" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private sealed record Item(Verb Verb, string Tense, int Person, string Form, string Stem, string Ending,
+                               IReadOnlyList<string> Stems, IReadOnlyList<string> Endings, IReadOnlyList<string> Answers);
+
+    private const int Rounds = 10;
+    private static readonly string[] Allowed = ["pres", "pret", "impf", "fut", "cond", "subj", "impsubj"];
+    private static readonly HashSet<string> tenses = ["pres", "pret", "impf"];
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private VerbBook? book;
+    private string? loadError;
+    private Phase phase = Phase.Ready;
+    private Item? item;
+    private string? stem, ending, tried;
+    private bool checkedAnswer, lastRight;
+    private int index, score, previousBest;
+    private readonly List<(string, string)> missed = new();
+    private readonly HashSet<string> usedVerbs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (book, _) = await VerbRepo.GetAsync(); }
+        catch (Exception ex) { loadError = $"Couldn't load the verbs: {ex.Message}"; }
+    }
+
+    private void Start()
+    {
+        score = index = 0;
+        previousBest = Best;
+        missed.Clear();
+        usedVerbs.Clear();
+        phase = Phase.Playing;
+        Deal();
+    }
+
+    private void Next()
+    {
+        index++;
+        if (index >= Rounds)
+        {
+            phase = Phase.Done;
+            _ = OnFinished.InvokeAsync(score);
+            return;
+        }
+        Deal();
+    }
+
+    private void PickStem(string s)
+    {
+        stem = s;
+        TryCheck();
+    }
+
+    private void PickEnding(string e)
+    {
+        ending = e;
+        TryCheck();
+    }
+
+    private void TryCheck()
+    {
+        if (item is null || stem is null || ending is null || checkedAnswer) return;
+        tried = stem + ending;
+        lastRight = item.Answers.Contains(tried);
+        checkedAnswer = true;
+        if (lastRight) score++;
+        else
+        {
+            missed.Add((item.Form, $"{item.Verb.Inf}, {VerbGrammar.PersonsFor(item.Tense)[item.Person].Label}, {VerbGrammar.TenseById[item.Tense].Name.ToLowerInvariant()} (not {tried})"));
+            VerbGameKit.RecordMiss(Progress, VerbGameKit.PracticeKey(item.Verb, item.Tense, item.Person));
+            _ = OnSaved.InvokeAsync();
+        }
+    }
+
+    private void Deal()
+    {
+        stem = ending = tried = null;
+        checkedAnswer = false;
+        for (var tries = 0; tries < 80; tries++)
+        {
+            var t = tenses.ElementAt(Random.Shared.Next(tenses.Count));
+            var v = VerbGameKit.PickVerb(book!, x => !x.OnlyThird && !x.Reflexive && x.Has(t) && !usedVerbs.Contains(x.Inf));
+            if (v is null || VerbGameKit.PickPerson(v, t) is not { } p) continue;
+            if (Make(v, t, p) is not { } made) continue;
+            item = made;
+            usedVerbs.Add(v.Inf);
+            return;
+        }
+    }
+
+    /// <summary>The form split into stem + ending, with 2 decoy stems and 3 decoy endings from the same verb.</summary>
+    private static Item? Make(Verb v, string t, int p)
+    {
+        var form = v.Form(t, p);
+        if (form is null) return null;
+        var shape = VerbParts.Analyse(v, t, p, form);
+        if (shape.Whole || shape.Ending.Length == 0 || shape.Stem.Length == 0) return null;
+        var answers = v.Answers(t, p);
+        var bare = v.Inf;
+
+        // Stems: other persons of this tense, the same person in other tenses, the plain stem and the infinitive.
+        var stemPool = new List<string>();
+        var endingPool = new List<string>();
+        void Collect(string tt, int q)
+        {
+            if (!v.HasForm(tt, q)) return;
+            var f = v.Form(tt, q)!;
+            var sh = VerbParts.Analyse(v, tt, q, f);
+            if (sh.Whole || sh.Ending.Length == 0) return;
+            stemPool.Add(sh.Stem);
+            endingPool.Add(sh.Ending);
+        }
+        for (var q = 0; q < VerbGrammar.Persons.Count; q++) if (q != p && VerbSettings.IsActive(t, q)) Collect(t, q);
+        foreach (var tt in new[] { "pres", "pret", "impf", "fut", "cond", "subj", "impsubj" }) if (tt != t) Collect(tt, p);
+        stemPool.Add(v.PatternStem(t));
+        stemPool.Add(bare.Length > 2 ? bare[..^2] : bare);
+        stemPool.Add(bare);
+
+        var stems = stemPool.Where(s => s != shape.Stem).Distinct().OrderBy(_ => Random.Shared.Next()).Take(2).ToList();
+        // No decoy ending that would also make a right answer with the right stem.
+        var endings = endingPool.Where(e => e != shape.Ending && !answers.Contains(shape.Stem + e))
+            .Distinct().OrderBy(_ => Random.Shared.Next()).Take(3).ToList();
+        if (stems.Count < 1 || endings.Count < 2) return null;
+        stems.Add(shape.Stem);
+        endings.Add(shape.Ending);
+        return new Item(v, t, p, form, shape.Stem, shape.Ending,
+            stems.OrderBy(_ => Random.Shared.Next()).ToList(), endings.OrderBy(_ => Random.Shared.Next()).ToList(), answers);
+    }
+}

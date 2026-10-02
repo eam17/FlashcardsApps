@@ -1,0 +1,147 @@
+@* Who's talking? A verb form appears (tuvimos); tap who's doing it (nosotros). Any person with that same
+   form counts (hablaba is yo or él). 60 seconds; a wrong answer costs 3 seconds. *@
+@implements IDisposable
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro pp-intro">
+        <div class="race-title">Who's talking?</div>
+        <p>A verb form appears. Tap <strong>who</strong> is doing it, from the ending alone. <strong>60 seconds</strong>; a wrong answer costs <strong>3 seconds</strong>.</p>
+        <TenseChips Allowed="Allowed" Selected="tenses" />
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && item is not null)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score right @(streak >= 3 ? $"· {streak} in a row" : "")</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="game-prompt pp-card">
+            <div class="pp-call" lang="es" @key="answers">@item.Form</div>
+            <div class="pp-en">@(VerbGrammar.TenseById[item.Tense].Name.ToLowerInvariant())</div>
+        </div>
+
+        @if (lastText is null)
+        {
+            <div class="game-feedback empty" aria-hidden="true"></div>
+        }
+        else
+        {
+            <div @key="answers" class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word">@lastText</span>
+            </div>
+        }
+
+        <div class="gw-who">
+            @foreach (var (group, label) in VerbGameKit.WhoButtons)
+            {
+                var g = group;
+                <button type="button" class="race-tile" @onclick="() => Answer(g)">@label</button>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <VerbGameResults Headline="@($"{score} right")" Score="score" PreviousBest="previousBest" Best="Best"
+                     Missed="missed" OnPlayAgain="Start" OnSettings="() => phase = Phase.Ready" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private sealed record Item(Verb Verb, string Tense, int Person, string Form, HashSet<string> Groups);
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    // Commands use their own persons, so they're left out here.
+    private static readonly string[] Allowed = VerbGrammar.Tenses.Select(t => t.Id).Where(t => t != "cmd").ToArray();
+    private static readonly HashSet<string> tenses = ["pres", "pret", "impf"];
+
+    private VerbBook? book;
+    private string? loadError;
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private Item? item;
+    private string? lastText;
+    private bool lastRight;
+    private int answers, score, streak, previousBest;
+    private readonly List<(string, string)> missed = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (book, _) = await VerbRepo.GetAsync(); }
+        catch (Exception ex) { loadError = $"Couldn't load the verbs: {ex.Message}"; }
+    }
+
+    private void Start()
+    {
+        score = streak = answers = 0;
+        previousBest = Best;
+        missed.Clear();
+        lastText = null;
+        Deal();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    private void Deal()
+    {
+        for (var tries = 0; tries < 50; tries++)
+        {
+            var t = tenses.ElementAt(Random.Shared.Next(tenses.Count));
+            var v = VerbGameKit.PickVerb(book!, x => !x.OnlyThird && x.Has(t));
+            if (v is null) continue;
+            if (VerbGameKit.PickPerson(v, t) is not { } p) continue;
+            var form = v.Form(t, p)!;
+            if (item is not null && item.Form == form) continue;
+            // Every person of this verb and tense with the same form is a right answer (hablaba: yo or él).
+            var groups = Enumerable.Range(0, VerbGrammar.PersonsFor(t).Count)
+                .Where(q => v.Form(t, q) == form && VerbSettings.IsActive(t, q))
+                .Select(q => VerbGrammar.PersonsFor(t)[q].Group).ToHashSet();
+            item = new Item(v, t, p, form, groups);
+            return;
+        }
+    }
+
+    private async Task Answer(string group)
+    {
+        if (phase != Phase.Playing || item is null) return;
+        lastRight = item.Groups.Contains(group);
+        var who = string.Join(" or ", item.Groups.Select(g => VerbGameKit.WhoShort(g)));
+        lastText = $"{item.Form} = {who} ({item.Verb.Inf})";
+        if (lastRight) { score++; streak++; }
+        else
+        {
+            streak = 0;
+            clock.Penalty(3);
+            missed.Add((item.Form, $"{who}: {item.Verb.Inf}, {VerbGrammar.TenseById[item.Tense].Name.ToLowerInvariant()}"));
+            VerbGameKit.RecordMiss(Progress, VerbGameKit.DecodeKey(item.Verb, item.Tense, item.Person));
+            await OnSaved.InvokeAsync();
+        }
+        answers++;
+        Deal();
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

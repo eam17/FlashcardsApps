@@ -1,0 +1,198 @@
+@* Stem match: strange stems on the left (tuv-, querr-, hech-), their verbs on the right. Tap one on each
+   side to match them. Clear the board and a new one comes. 60 seconds; a wrong pair costs 3 seconds. *@
+@implements IDisposable
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro">
+        <div class="race-title">Stem match</div>
+        <p>Some forms change so much you can't see the verb (<em lang="es">tuve</em> is <em lang="es">tener</em>). Match each strange stem to its verb.
+           <strong>60 seconds</strong>; a wrong pair costs <strong>3 seconds</strong>. The whole list is under Verbs → Decode → Strange stems.</p>
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score matched</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="race-grid gw-stems">
+            @for (var i = 0; i < board.Count; i++)
+            {
+                var k = i;
+                var pairItem = board[k];
+                var right = rightOrder[k];
+                <button type="button" class="race-tile es @StemClass(k)" disabled="@pairItem.Done" lang="es" @onclick="() => PickStem(k)">
+                    @pairItem.Stem.Label
+                    <span class="gw-tile-sub">@pairItem.Example</span>
+                </button>
+                <button type="button" class="race-tile es @VerbClass(right)" disabled="@(board[right].Done)" lang="es" @onclick="() => PickVerb(right)">
+                    @(board[right].Verb)
+                    <span class="gw-tile-sub" lang="en">@(board[right].En)</span>
+                </button>
+            }
+        </div>
+
+        @if (lastText is null)
+        {
+            <div class="game-feedback empty" aria-hidden="true"></div>
+        }
+        else
+        {
+            <div @key="answers" class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word">@lastText</span>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <VerbGameResults Headline="@($"{score} matched")" Score="score" PreviousBest="previousBest" Best="Best"
+                     Missed="missed" OnPlayAgain="Start" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private sealed class Tile(StrangeStem stem, string verb, string en, string example)
+    {
+        public StrangeStem Stem { get; } = stem;
+        public string Verb { get; } = verb;
+        public string En { get; } = en;
+        public string Example { get; } = example;
+        public bool Done { get; set; }
+    }
+
+    private const int BoardSize = 5;
+
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+
+    private VerbBook? book;
+    private string? loadError;
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private List<Tile> board = new();
+    private int[] rightOrder = [];
+    private int? stemPick, verbPick, wrongStem, wrongVerb;
+    private string? lastText;
+    private bool lastRight;
+    private int answers, score, previousBest;
+    private readonly List<(string, string)> missed = new();
+    private readonly Queue<string> recent = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (book, _) = await VerbRepo.GetAsync(); }
+        catch (Exception ex) { loadError = $"Couldn't load the verbs: {ex.Message}"; }
+    }
+
+    /// <summary>Stems that belong to one verb (fu- is both ser and ir, so it's left out to keep pairs clear).</summary>
+    private static IEnumerable<StrangeStem> Candidates =>
+        VerbDecode.StrangeStems.SelectMany(s => s.Stems).Where(s => s.Verbs.Length == 1);
+
+    private void Start()
+    {
+        score = answers = 0;
+        previousBest = Best;
+        missed.Clear();
+        lastText = null;
+        NewBoard();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    /// <summary>Five stems with five different verbs, avoiding stems from the last boards.</summary>
+    private void NewBoard()
+    {
+        var picks = new List<StrangeStem>();
+        foreach (var s in Candidates.OrderBy(s => recent.Contains(s.Label) ? 1 : 0).ThenBy(_ => Random.Shared.Next()))
+        {
+            if (picks.Count == BoardSize) break;
+            if (picks.Any(p => p.Verbs[0] == s.Verbs[0]) || !book!.ByInf.ContainsKey(s.Verbs[0])) continue;
+            picks.Add(s);
+        }
+        foreach (var p in picks)
+        {
+            recent.Enqueue(p.Label);
+            while (recent.Count > 15) recent.Dequeue();
+        }
+        board = picks.Select(s => new Tile(s, s.Verbs[0], book!.ByInf[s.Verbs[0]].En, ExampleFor(s))).ToList();
+        rightOrder = Enumerable.Range(0, board.Count).OrderBy(_ => Random.Shared.Next()).ToArray();
+        stemPick = verbPick = wrongStem = wrongVerb = null;
+    }
+
+    /// <summary>A real form with the stem: "tuve" for tuv-.</summary>
+    private string ExampleFor(StrangeStem s)
+    {
+        if (s.Whole) return "";
+        var v = book!.ByInf[s.Verbs[0]];
+        foreach (var t in s.Tenses)
+            for (var p = 0; p < VerbGrammar.PersonsFor(t).Count; p++)
+                if (v.Form(t, p) is { } f && s.Stems.Any(x => AnswerCheck.StripAccents(f).StartsWith(AnswerCheck.StripAccents(x), StringComparison.Ordinal)))
+                    return $"{f} ({VerbGrammar.TenseById[t].Name.ToLowerInvariant()})";
+        return "";
+    }
+
+    private string StemClass(int i) => board[i].Done ? "good" : wrongStem == i ? "bad" : stemPick == i ? "sel" : "";
+    private string VerbClass(int i) => board[i].Done ? "good" : wrongVerb == i ? "bad" : verbPick == i ? "sel" : "";
+
+    private void PickStem(int i)
+    {
+        if (phase != Phase.Playing || board[i].Done) return;
+        stemPick = i;
+        wrongStem = wrongVerb = null;
+        Check();
+    }
+
+    private void PickVerb(int i)
+    {
+        if (phase != Phase.Playing || board[i].Done) return;
+        verbPick = i;
+        wrongStem = wrongVerb = null;
+        Check();
+    }
+
+    private void Check()
+    {
+        if (stemPick is not { } s || verbPick is not { } v) return;
+        var tile = board[s];
+        lastRight = s == v;
+        answers++;
+        if (lastRight)
+        {
+            tile.Done = true;
+            score++;
+            lastText = $"{tile.Stem.Label} → {tile.Verb} ({tile.En})";
+        }
+        else
+        {
+            clock.Penalty(3);
+            wrongStem = s;
+            wrongVerb = v;
+            lastText = $"{tile.Stem.Label} is {tile.Verb}, not {board[v].Verb}";
+            if (!missed.Any(m => m.Item1 == tile.Stem.Label)) missed.Add((tile.Stem.Label, $"→ {tile.Verb} ({tile.En})"));
+        }
+        stemPick = verbPick = null;
+        if (board.All(b => b.Done)) NewBoard();
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

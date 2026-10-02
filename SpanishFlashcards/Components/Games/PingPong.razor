@@ -1,0 +1,235 @@
+@* Ping-pong, the classroom game: a person is called out ("nosotros") and you tap the matching form
+   (hablamos). One verb at a time, every person in turn, then the next verb. 60 seconds; a wrong answer
+   costs 3 seconds and that person comes back two calls later. Logic in PingPongGame.cs. *@
+@implements IDisposable
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro pp-intro">
+        <div class="race-title">Ping-pong</div>
+        <p>Like the classroom game: a person is called out (<em lang="es">yo</em>, <em lang="es">nosotros</em>…) and you tap the
+           matching form as fast as you can. Each verb goes round every person, then a new verb comes in.
+           <strong>60 seconds</strong>; a wrong answer costs <strong>3 seconds</strong>.</p>
+
+        <div class="pp-setting">
+            <div class="dc-q-title">Tense</div>
+            @foreach (var stage in VerbGrammar.Stages)
+            {
+                var inStage = VerbGrammar.Tenses.Where(t => t.Stage == stage.Number).ToList();
+                <div class="dc-chips">
+                    @foreach (var t in inStage)
+                    {
+                        var id = t.Id;
+                        <button type="button" class="chip @(tense == id ? "on" : "")" aria-pressed="@(tense == id ? "true" : "false")"
+                                @onclick="() => tense = id">@t.Name</button>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="pp-setting">
+            <div class="dc-q-title">Verbs</div>
+            <div class="segmented" role="tablist" aria-label="Which verbs">
+                <button type="button" role="tab" class="seg @(choice == PingPongGame.VerbChoice.Common ? "on" : "")" @onclick="() => choice = PingPongGame.VerbChoice.Common">@($"Top {PingPongGame.CommonCount}")</button>
+                <button type="button" role="tab" class="seg @(choice == PingPongGame.VerbChoice.Irregular ? "on" : "")" @onclick="() => choice = PingPongGame.VerbChoice.Irregular">Irregular</button>
+                <button type="button" role="tab" class="seg @(choice == PingPongGame.VerbChoice.All ? "on" : "")" @onclick="() => choice = PingPongGame.VerbChoice.All">All</button>
+            </div>
+            <p class="small">@PoolText()</p>
+        </div>
+
+        @if (CanSpeak && Speak is not null)
+        {
+            <label class="check-row">
+                <input type="checkbox" @bind="sayCalls" />
+                <span>Say each call out loud</span>
+            </label>
+        }
+
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" disabled="@(PingPongGame.PoolFor(book, tense, choice).Count == 0)" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && game?.Now is { } call)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score right @(streak >= 3 ? $"· {streak} in a row" : "")</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="game-prompt pp-card">
+            <div class="pp-verb @(call.FirstOfVerb ? "new" : "")" @key="call.Verb.Inf">
+                <span lang="es">@call.Verb.Inf</span>
+                <span class="pp-en">@call.Verb.En · @(VerbGrammar.TenseById[game.Tense].Name.ToLowerInvariant())</span>
+            </div>
+            <div class="pp-call" lang="es" @key="call.Id">@call.Said</div>
+        </div>
+
+        @if (last is null)
+        {
+            <div class="game-feedback empty" aria-hidden="true"></div>
+        }
+        else
+        {
+            <div @key="answers" class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word" lang="es"><strong>@last.Said</strong> → @last.Right</span>
+            </div>
+        }
+
+        <div class="pp-options">
+            @foreach (var option in call.Options)
+            {
+                var o = option;
+                <button type="button" class="race-tile es pp-option" lang="es" @onclick="() => Answer(o)">@o</button>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="race-intro">
+        <div class="race-title">@($"{score} right")</div>
+        @if (score > previousBest)
+        {
+            <p><strong>New best score!</strong> Previous best: @previousBest</p>
+        }
+        else
+        {
+            <p>Best score: @Best</p>
+        }
+        @if (misses.Count > 0)
+        {
+            <div class="race-mistakes">
+                <div class="small"><strong>To look at again</strong> (they'll come up in Verbs practice too)</div>
+                @foreach (var m in misses)
+                {
+                    <div class="race-mistake" lang="es">
+                        <strong>@m.Verb.Inf</strong>, @m.Said → <strong>@m.Right</strong>
+                        <span class="small" lang="en">(not @m.Picked)</span>
+                    </div>
+                }
+            </div>
+        }
+        <div class="pp-again">
+            <button type="button" class="primary" @onclick="Start">Play again</button>
+            <button type="button" class="tool" @onclick="() => phase = Phase.Ready">Change tense or verbs</button>
+        </div>
+    </div>
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    /// <summary>Called after a miss is recorded in your verb progress.</summary>
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    // Settings, kept while the app is open.
+    private static string tense = "pres";
+    private static PingPongGame.VerbChoice choice = PingPongGame.VerbChoice.Common;
+    private static bool sayCalls = true;
+
+    private VerbBook? book;
+    private string? loadError;
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private PingPongGame? game;
+    private PingPongGame.Call? last;
+    private bool lastRight;
+    private int answers, score, streak, previousBest;
+    private int spokenId = -1;
+    private readonly List<PingPongGame.Miss> misses = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            (book, _) = await VerbRepo.GetAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = $"Couldn't load the verbs: {ex.Message}";
+        }
+    }
+
+    private string PoolText()
+    {
+        var n = PingPongGame.PoolFor(book!, tense, choice).Count;
+        return choice switch
+        {
+            PingPongGame.VerbChoice.Common => $"The {n} most common verbs.",
+            PingPongGame.VerbChoice.Irregular => n == 0 ? "No irregular verbs in this tense: try Top 30." : $"{n} verbs with irregular forms in this tense.",
+            _ => $"All {n} verbs.",
+        };
+    }
+
+    private void Start()
+    {
+        game = new PingPongGame(book!, tense, choice);
+        if (!game.CanPlay) return;
+        score = streak = answers = 0;
+        previousBest = Best;
+        misses.Clear();
+        last = null;
+        spokenId = -1;
+        game.Next();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    private async Task Answer(string picked)
+    {
+        if (phase != Phase.Playing || game?.Now is not { } call) return;
+        lastRight = game.Answer(picked);
+        if (lastRight)
+        {
+            score++;
+            streak++;
+        }
+        else
+        {
+            streak = 0;
+            clock.Penalty(3);
+            misses.Add(new PingPongGame.Miss(call.Verb, call.Said, call.Right, picked));
+            // A miss counts in your verb progress (the form comes up in practice soon); right answers
+            // don't, so a quick game can't make a form look learned.
+            var key = game.SkillFor(call).Key;
+            Progress.VerbSkills.TryGetValue(key, out var before);
+            Progress.VerbSkills[key] = VerbSrs.Apply(before, Grade.Wrong, typed: false, DateTime.UtcNow);
+            await OnSaved.InvokeAsync();
+        }
+        last = call;
+        answers++;
+        game.Next();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Say each new call once ("tener… yo" when a new verb comes in).
+        if (phase == Phase.Playing && sayCalls && CanSpeak && Speak is not null && game?.Now is { } call && call.Id != spokenId)
+        {
+            spokenId = call.Id;
+            await Speak(call.FirstOfVerb ? $"{call.Verb.Inf}. {call.Said}" : call.Said);
+        }
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

@@ -1,0 +1,205 @@
+@* What does it mean? A verb form appears (tuvimos); pick the English (we had). Any right reading counts
+   (fue: he was or he went). Wrong options are the same verb in another tense or person.
+   60 seconds; a wrong answer costs 3 seconds. *@
+@implements IDisposable
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro pp-intro">
+        <div class="race-title">What does it mean?</div>
+        <p>A verb form appears. Pick what it means in English: the ending tells you who and when.
+           <strong>60 seconds</strong>; a wrong answer costs <strong>3 seconds</strong>.</p>
+        <TenseChips Allowed="Allowed" Selected="tenses" />
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && item is not null)
+{
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score right @(streak >= 3 ? $"· {streak} in a row" : "")</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="game-prompt pp-card">
+            <div class="pp-call" lang="es" @key="answers">@item.Form</div>
+        </div>
+
+        @if (lastText is null)
+        {
+            <div class="game-feedback empty" aria-hidden="true"></div>
+        }
+        else
+        {
+            <div @key="answers" class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word">@lastText</span>
+            </div>
+        }
+
+        <div class="gw-meanings">
+            @foreach (var option in item.Options)
+            {
+                var o = option;
+                <button type="button" class="race-tile" @onclick="() => Answer(o)">@o</button>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <VerbGameResults Headline="@($"{score} right")" Score="score" PreviousBest="previousBest" Best="Best"
+                     Missed="missed" OnPlayAgain="Start" OnSettings="() => phase = Phase.Ready" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private sealed record Item(Verb Verb, string Tense, int Person, string Form, string Right, HashSet<string> AllRight, IReadOnlyList<string> Options);
+
+    private static readonly string[] Allowed = VerbGrammar.Tenses.Select(t => t.Id).ToArray();
+    private static readonly HashSet<string> tenses = ["pres", "pret", "impf"];
+
+    // Tenses whose English is easy to confuse with each tense: used for the wrong options.
+    private static readonly Dictionary<string, string[]> LookAlike = new()
+    {
+        ["pres"] = ["pret", "impf", "fut", "subj"],
+        ["near"] = ["fut", "pres", "cond"],
+        ["pret"] = ["impf", "pres", "perf", "plup"],
+        ["impf"] = ["pret", "cond", "pres"],
+        ["fut"] = ["cond", "pres", "near"],
+        ["cond"] = ["fut", "impf", "condperf"],
+        ["perf"] = ["pret", "plup", "pres"],
+        ["subj"] = ["pres", "impsubj", "fut"],
+        ["cmd"] = ["pres", "subj"],
+        ["impsubj"] = ["subj", "pret", "cond"],
+        ["plup"] = ["perf", "pret", "condperf"],
+        ["futperf"] = ["condperf", "fut", "perf"],
+        ["condperf"] = ["futperf", "cond", "plup"],
+        ["subjperf"] = ["perf", "plupsubj", "subj"],
+        ["plupsubj"] = ["subjperf", "plup", "condperf"],
+    };
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private VerbBook? book;
+    private string? loadError;
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private Item? item;
+    private string? lastText;
+    private bool lastRight;
+    private int answers, score, streak, previousBest;
+    private readonly List<(string, string)> missed = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (book, _) = await VerbRepo.GetAsync(); }
+        catch (Exception ex) { loadError = $"Couldn't load the verbs: {ex.Message}"; }
+    }
+
+    private void Start()
+    {
+        score = streak = answers = 0;
+        previousBest = Best;
+        missed.Clear();
+        lastText = null;
+        Deal();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    private void Deal()
+    {
+        for (var tries = 0; tries < 60; tries++)
+        {
+            var t = tenses.ElementAt(Random.Shared.Next(tenses.Count));
+            var v = VerbGameKit.PickVerb(book!, x => VerbEnglish.Has(x) && x.Has(t));
+            if (v is null || VerbGameKit.PickPerson(v, t) is not { } p) continue;
+            var form = VerbGameKit.Shown(v, t, p);
+            if (item is not null && item.Form == form) continue;
+            var right = VerbEnglish.Meaning(v, t, p);
+            if (right is null) continue;
+
+            // Every reading of this form is right: hablamos = we speak or we spoke; fue = he was or he went.
+            var allRight = VerbGameKit.Readings(book!, form)
+                .Select(r => VerbEnglish.Meaning(r.Verb, r.Tense, r.Person)).OfType<string>().ToHashSet();
+            allRight.Add(right);
+
+            var wrong = new List<string>();
+            void Add(string? s)
+            {
+                if (s is null || allRight.Contains(s) || wrong.Contains(s) || wrong.Count >= 3) return;
+                wrong.Add(s);
+            }
+            var look = LookAlike.GetValueOrDefault(t, []).OrderBy(_ => Random.Shared.Next()).ToList();
+            // Two from other tenses (same person), one from another person (same tense), then fill up.
+            foreach (var lt in look.Take(2)) Add(SamePerson(v, t, p, lt));
+            // Not "you" for an él form or "you all" for an ellos form: usted and ustedes use those forms, so
+            // "you speak" would be right too.
+            var group = VerbGrammar.PersonsFor(t)[p].Group;
+            bool Confusable(string g) => (group, g) is ("el", "tu") or ("tu", "el") or ("ellos", "vos") or ("vos", "ellos");
+            var others = Enumerable.Range(0, VerbGrammar.PersonsFor(t).Count)
+                .Where(q => q != p && VerbSettings.IsActive(t, q) && !Confusable(VerbGrammar.PersonsFor(t)[q].Group))
+                .OrderBy(_ => Random.Shared.Next()).ToList();
+            foreach (var q in others)
+            {
+                if (wrong.Count >= 3) break;
+                Add(VerbEnglish.Meaning(v, t, q));
+            }
+            foreach (var lt in look) Add(SamePerson(v, t, p, lt));
+            if (wrong.Count < 3) continue;
+
+            var options = wrong.Append(right).OrderBy(_ => Random.Shared.Next()).ToList();
+            item = new Item(v, t, p, form, right, allRight, options);
+            return;
+        }
+    }
+
+    /// <summary>The same person in another tense (a command person maps to the matching ordinary person).</summary>
+    private static string? SamePerson(Verb v, string t, int p, string other)
+    {
+        var group = VerbGrammar.PersonsFor(t)[p].Group;
+        var persons = VerbGrammar.PersonsFor(other);
+        for (var q = 0; q < persons.Count; q++)
+            if (persons[q].Group == group && !persons[q].Negative) return VerbEnglish.Meaning(v, other, q);
+        return null; // no such person there (commands have no yo)
+    }
+
+    private async Task Answer(string picked)
+    {
+        if (phase != Phase.Playing || item is null) return;
+        lastRight = item.AllRight.Contains(picked);
+        var name = VerbGrammar.TenseById[item.Tense].Name.ToLowerInvariant();
+        lastText = $"{item.Form} = {item.Right} ({item.Verb.Inf}, {name})";
+        if (lastRight) { score++; streak++; }
+        else
+        {
+            streak = 0;
+            clock.Penalty(3);
+            missed.Add((item.Form, $"= {item.Right} ({item.Verb.Inf}, {name}), not \"{picked}\""));
+            VerbGameKit.RecordMiss(Progress, VerbGameKit.DecodeKey(item.Verb, item.Tense, item.Person));
+            await OnSaved.InvokeAsync();
+        }
+        answers++;
+        Deal();
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

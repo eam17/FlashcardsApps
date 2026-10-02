@@ -1,0 +1,163 @@
+@* Tense sort: two tenses that are easy to mix up. A form appears; tap which one it is. Forms that could be
+   either (hablamos: present or preterite) are left out. 60 seconds; a wrong answer costs 3 seconds. *@
+@implements IDisposable
+@inject VerbRepository VerbRepo
+
+@if (book is null)
+{
+    <div class="race-intro"><p>@(loadError ?? "Loading verbs…")</p></div>
+}
+else if (phase == Phase.Ready)
+{
+    <div class="race-intro pp-intro">
+        <div class="race-title">Tense sort</div>
+        <p>Two look-alike tenses. A form appears: tap which tense it is. <strong>60 seconds</strong>; a wrong answer costs <strong>3 seconds</strong>.</p>
+        <div class="pp-setting">
+            <div class="dc-q-title">Which two?</div>
+            <div class="gw-pairs">
+                @for (var i = 0; i < Pairs.Length; i++)
+                {
+                    var k = i;
+                    <button type="button" class="chip @(pair == k ? "on" : "")" aria-pressed="@(pair == k ? "true" : "false")" @onclick="() => pair = k">@Pairs[k].Title</button>
+                }
+            </div>
+            <p class="small">@(Pairs[pair].Hint)</p>
+        </div>
+        <p class="small">Best score: @Best</p>
+        <button type="button" class="primary" @onclick="Start">Start</button>
+    </div>
+}
+else if (phase == Phase.Playing && item is not null)
+{
+    var pr = Pairs[pair];
+    <div class="race">
+        <div class="race-top">
+            <div class="race-score" aria-live="polite">@score right @(streak >= 3 ? $"· {streak} in a row" : "")</div>
+            <div class="race-time">@Math.Ceiling(clock.Remaining)s</div>
+        </div>
+        <div class="race-bar" aria-hidden="true"><div class="race-bar-fill @(clock.Remaining < 10 ? "low" : "")" style="width: @(clock.Percent)%"></div></div>
+
+        <div class="game-prompt pp-card">
+            <div class="pp-call" lang="es" @key="answers">@item.Form</div>
+        </div>
+
+        @if (lastText is null)
+        {
+            <div class="game-feedback empty" aria-hidden="true"></div>
+        }
+        else
+        {
+            <div @key="answers" class="game-feedback @(lastRight ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(lastRight ? "✓" : "✗")</span>
+                <span class="fb-word">@lastText</span>
+            </div>
+        }
+
+        <div class="big-choices">
+            <button type="button" class="big-choice gw-bin" @onclick="() => Answer(pr.A)">@(VerbGrammar.TenseById[pr.A].Name)<span class="gw-bin-sub">@pr.SubA</span></button>
+            <button type="button" class="big-choice gw-bin" @onclick="() => Answer(pr.B)">@(VerbGrammar.TenseById[pr.B].Name)<span class="gw-bin-sub">@pr.SubB</span></button>
+        </div>
+    </div>
+}
+else
+{
+    <VerbGameResults Headline="@($"{score} right")" Score="score" PreviousBest="previousBest" Best="Best"
+                     Missed="missed" OnPlayAgain="Start" OnSettings="() => phase = Phase.Ready" />
+}
+
+@code {
+    private enum Phase { Ready, Playing, Done }
+    private sealed record Pair(string A, string B, string Title, string SubA, string SubB, string Hint, int[]? FavourPersons = null);
+    private sealed record Item(Verb Verb, string Tense, int Person, string Form);
+
+    private static readonly Pair[] Pairs =
+    [
+        new("pret", "impf", "Preterite or imperfect", "did", "used to, was …ing", "Preterite endings: -é, -aste, -ó / -í, -iste, -ió. Imperfect: -aba- / -ía-."),
+        new("fut", "cond", "Future or conditional", "will", "would", "Both keep the infinitive. Future: -é, -ás, -á. Conditional: -ía, -ías, -ía."),
+        new("pres", "subj", "Present or subjunctive", "does", "(that) … does", "The subjunctive swaps the vowel: habla → hable, come → coma."),
+        new("pres", "pret", "Present or preterite", "does", "did", "Watch the accent: hablo (I speak), habló (he spoke).", [0, 2]),
+    ];
+
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public int Best { get; set; }
+    [Parameter] public EventCallback<int> OnFinished { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private static int pair;
+
+    private VerbBook? book;
+    private string? loadError;
+    private readonly GameClock clock = new();
+    private Phase phase = Phase.Ready;
+    private Item? item;
+    private string? lastText;
+    private bool lastRight;
+    private int answers, score, streak, previousBest;
+    private readonly List<(string, string)> missed = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (book, _) = await VerbRepo.GetAsync(); }
+        catch (Exception ex) { loadError = $"Couldn't load the verbs: {ex.Message}"; }
+    }
+
+    private void Start()
+    {
+        score = streak = answers = 0;
+        previousBest = Best;
+        missed.Clear();
+        lastText = null;
+        Deal();
+        phase = Phase.Playing;
+        clock.Start(60, () => InvokeAsync(StateHasChanged), Finish);
+    }
+
+    /// <summary>A form of one of the two tenses that isn't also a form of the other (for that verb).</summary>
+    private void Deal()
+    {
+        var pr = Pairs[pair];
+        for (var tries = 0; tries < 60; tries++)
+        {
+            var t = Random.Shared.Next(2) == 0 ? pr.A : pr.B;
+            var other = t == pr.A ? pr.B : pr.A;
+            var v = VerbGameKit.PickVerb(book!, x => !x.OnlyThird && x.Has(pr.A) && x.Has(pr.B));
+            if (v is null) continue;
+            Func<int, bool>? favour = pr.FavourPersons is { } fp && Random.Shared.Next(3) > 0 ? q => fp.Contains(q) : null;
+            if (VerbGameKit.PickPerson(v, t, favour) is not { } p) continue;
+            var form = v.Form(t, p)!;
+            var ambiguous = Enumerable.Range(0, VerbGrammar.PersonsFor(other).Count).Any(q => v.Form(other, q) == form);
+            if (ambiguous || (item is not null && item.Form == form)) continue;
+            item = new Item(v, t, p, form);
+            return;
+        }
+    }
+
+    private async Task Answer(string tense)
+    {
+        if (phase != Phase.Playing || item is null) return;
+        lastRight = tense == item.Tense;
+        var name = VerbGrammar.TenseById[item.Tense].Name.ToLowerInvariant();
+        var english = VerbEnglish.Meaning(item.Verb, item.Tense, item.Person);
+        lastText = $"{item.Form}: {name}" + (english is null ? "" : $" ({english})");
+        if (lastRight) { score++; streak++; }
+        else
+        {
+            streak = 0;
+            clock.Penalty(3);
+            missed.Add((item.Form, $"{name}: {item.Verb.Inf}" + (english is null ? "" : $", {english}")));
+            VerbGameKit.RecordMiss(Progress, VerbGameKit.DecodeKey(item.Verb, item.Tense, item.Person));
+            await OnSaved.InvokeAsync();
+        }
+        answers++;
+        Deal();
+    }
+
+    private async Task Finish()
+    {
+        phase = Phase.Done;
+        await InvokeAsync(StateHasChanged);
+        await OnFinished.InvokeAsync(score);
+    }
+
+    public void Dispose() => clock.Dispose();
+}

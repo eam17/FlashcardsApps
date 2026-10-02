@@ -1,0 +1,47 @@
+@* End-of-round screen for the verb games: score, best, what to look at again, play again or change settings. *@
+<div class="race-intro">
+    <div class="race-title">@Headline</div>
+    @if (Score > PreviousBest)
+    {
+        <p><strong>New best score!</strong> Previous best: @PreviousBest</p>
+    }
+    else
+    {
+        <p>Best score: @Best</p>
+    }
+    @if (Extra is not null)
+    {
+        <p>@Extra</p>
+    }
+
+    @if (Missed.Count > 0)
+    {
+        <div class="race-mistakes">
+            <div class="small"><strong>To look at again</strong> (they come up in the Verbs tab too)</div>
+            @foreach (var (es, note) in Missed)
+            {
+                <div class="race-mistake"><strong lang="es">@es</strong> <span class="small">@note</span></div>
+            }
+        </div>
+    }
+
+    <div class="pp-again">
+        <button type="button" class="primary" @onclick="OnPlayAgain">Play again</button>
+        @if (OnSettings.HasDelegate)
+        {
+            <button type="button" class="tool" @onclick="OnSettings">Change settings</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Headline { get; set; } = "";
+    [Parameter] public int Score { get; set; }
+    [Parameter] public int PreviousBest { get; set; }
+    [Parameter] public int Best { get; set; }
+    [Parameter] public string? Extra { get; set; }
+    /// <summary>Spanish form and a short note ("tener, nosotros, preterite").</summary>
+    [Parameter] public IReadOnlyList<(string Es, string Note)> Missed { get; set; } = Array.Empty<(string, string)>();
+    [Parameter] public EventCallback OnPlayAgain { get; set; }
+    [Parameter] public EventCallback OnSettings { get; set; }
+}

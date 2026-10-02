@@ -1,0 +1,49 @@
+@* Tense chips for the verb games, grouped by learning stage. Multi-select (at least one stays on) or single. *@
+
+<div class="pp-setting">
+    <div class="dc-q-title">@Title</div>
+    @foreach (var stage in VerbGrammar.Stages)
+    {
+        var inStage = VerbGrammar.Tenses.Where(t => t.Stage == stage.Number && Allowed.Contains(t.Id)).ToList();
+        @if (inStage.Count > 0)
+        {
+            <div class="dc-chips">
+                @foreach (var t in inStage)
+                {
+                    var id = t.Id;
+                    var on = Selected.Contains(id);
+                    <button type="button" class="chip @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")" @onclick="() => Toggle(id)">@t.Name</button>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Tenses";
+    /// <summary>Tense ids that can be picked.</summary>
+    [Parameter, EditorRequired] public IReadOnlyCollection<string> Allowed { get; set; } = default!;
+    /// <summary>The picked tenses (changed in place).</summary>
+    [Parameter, EditorRequired] public HashSet<string> Selected { get; set; } = default!;
+    /// <summary>Single choice: tapping a tense picks only that one.</summary>
+    [Parameter] public bool Single { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task Toggle(string id)
+    {
+        if (Single)
+        {
+            Selected.Clear();
+            Selected.Add(id);
+        }
+        else if (!Selected.Remove(id))
+        {
+            Selected.Add(id);
+        }
+        else if (Selected.Count == 0)
+        {
+            Selected.Add(id); // keep at least one
+        }
+        await OnChanged.InvokeAsync();
+    }
+}

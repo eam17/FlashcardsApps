@@ -42,13 +42,22 @@ Upload the contents of `bin/Release/net10.0/publish/wwwroot` to any static host 
 - The speaker buttons read the word and sentence aloud with your device's Spanish voice (if it has one).
 - Nouns show their article with a colour: blue = masculine (el), pink = feminine (la), purple = either. Verbs show present (yo / tú / él) and past forms on the answer side.
 - Pick a group from the dropdown: frequency groups of 100, topics (food, travel, family…), or *Tricky words*.
-- **Games** tab: practice that doesn't change your levels. Tricky words and words you're currently learning come up most, with an easy one now and then. Words come from the group in the picker.
+- **Games** tab, in two sections. **Vocabulary** games don't change your levels; tricky words and words you're currently learning come up most, with an easy one now and then, from the group in the picker:
   - *Match race*: match Spanish to English (60 s, wrong pairs −3 s). Matched spots stay empty for a moment and then refill in place; one unmatched word waits on each side so the two new tiles never match each other.
   - *Gender sort*: tap el or la for each noun (60 s).
   - *True or false*: does the Spanish match the English? Swipe right for True, left for False, or tap the buttons (60 s).
   - *Listen and tap*: hear the word, pick its meaning (10 words).
   - *Fill the gap*: Spanish sentence with a missing word, 6 Spanish options, no English (60 s). The wrong options are a different kind of word (for example verbs when a noun is missing), so only one choice fits the sentence.
   - *Word builder*: spell the Spanish from scrambled letters (8 words).
+- **Verbs** games use the most common verbs (rank-weighted, top 120) and the vosotros setting. A miss is recorded as a wrong answer for that form (Decode skill for the reading games, practice skill for the others) so it comes up again in the Verbs tab; right answers aren't recorded. Shared code in `Components/Games/VerbGameKit.cs`, tense picker `TenseChips.razor`, results `VerbGameResults.razor`.
+  - *Who's talking?*: a form appears, tap the person; any person with that form counts (*hablaba*: yo or él). Pick tenses (not commands). 60 s, wrong −3 s.
+  - *What does it mean?*: a form appears, pick the English (*tuvimos* → "we had"). Any reading counts (*fue*: he was or he went). Wrong options are the same verb in look-alike tenses or other persons (never "you" for an *él* form, since *usted* uses it). English comes from `Models/Verbs/VerbEnglish.cs` and `VerbEnglish.Data.cs` (made by `tools/verb-english/gen_english.py`); *gustar*-type verbs are left out. 60 s.
+  - *Tense sort*: pick a pair (preterite/imperfect, future/conditional, present/subjunctive, present/preterite) and sort each form; forms that could be either (*hablamos*) are left out. 60 s.
+  - *Stem match*: five strange stems (from Decode's table) and their verbs; tap one on each side. Clear the board for a new one. 60 s, wrong pair −3 s.
+  - *Clue words*: 10 sentences with a missing verb and a clue (*ayer*, *de niño*, *ojalá*, *si tuviera*…) that decides the tense; four forms of the same verb in rival tenses; the reason after each. 41 sentences in `tools/verb-games/clues_src.py`, which checks them against verbs.json and writes `Models/Verbs/VerbClues.Data.cs`.
+  - *Ping-pong*: the classroom game. A person is called out (*yo*, *ella*, *ustedes*…, spoken aloud if the device can) and you tap the matching form from four forms of the same verb. Each verb goes round every person in random order, then a new verb comes in; a missed person comes back two calls later. Pick the tense (any of the 15) and the verbs (top 30, irregular in that tense, or all). 60 s, wrong −3 s. Misses are recorded in your verb progress (the form comes up in practice soon); right answers aren't, so a fast game can't make a form look learned. Logic in `Components/Games/PingPongGame.cs`.
+  - *Build it*: verb, person and tense; tap the stem, then the ending (*habl* + *ábamos*). Decoys are real stems and endings of the same verb in other persons and tenses. 10 forms.
+  - *Boss battle*: pick one of 15 tough verbs and the tenses. Boss has 12 health, you have 3 hearts; a right answer hits once (twice on a streak of 3+), a wrong one costs a heart. Beaten bosses get a crown (`boss-<verb>` in GameBests); the card shows how many you've beaten.
   - To add a game: put its component in `Components/Games/`, list it in `GamesHub.razor`; `GameKit.cs` has the shared word picker and timer.
 
 ## Verbs tab
