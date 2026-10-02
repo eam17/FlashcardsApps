@@ -79,7 +79,19 @@ public static class VerbParts
             }
         }
 
-        if (info.IsCompound)
+        if (info.IsGoingTo)
+        {
+            // voy a + infinitive (the infinitive never changes)
+            var words = rest.Split(' ');
+            if (words.Length >= 3)
+            {
+                parts.Add(new(words[0] + " " + words[1], PartKind.Helper));
+                parts.Add(new(" ", PartKind.Stem));
+                rest = string.Join(' ', words.Skip(2));
+            }
+            parts.Add(new(rest, PartKind.Stem));
+        }
+        else if (info.IsCompound)
         {
             // haber + participle
             var space = rest.IndexOf(' ');

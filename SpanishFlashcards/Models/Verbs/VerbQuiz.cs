@@ -126,6 +126,7 @@ public static class VerbQuiz
     private static readonly Dictionary<string, string[]> LookAlike = new()
     {
         ["pres"] = ["subj", "impf", "pret"],
+        ["near"] = ["fut", "pres"],
         ["pret"] = ["impf", "pres", "impsubj"],
         ["impf"] = ["pret", "cond", "pres"],
         ["fut"] = ["cond", "pres", "subj"],
@@ -175,6 +176,13 @@ public static class VerbQuiz
 
         Add(v.Regularised(t, p));
         Add(OverApplied(v, t, p));
+        if (t == "near")
+        {
+            // The usual slips: forgetting the "a", conjugating the second verb, using the wrong ir.
+            Add(right.Replace(" a ", " "));
+            if (v.Form("pres", p) is { } conj && !v.Reflexive) Add(right[..(right.LastIndexOf(' ') + 1)] + conj);
+            Add(right.Replace(VerbGrammar.IrPresent[p] + " a", new[] { "iba", "ibas", "iba", "íbamos", "ibais", "iban" }[p] + " a"));
+        }
         var bare = AnswerCheck.StripAccents(right);
         if (bare != right) Add(bare);
 

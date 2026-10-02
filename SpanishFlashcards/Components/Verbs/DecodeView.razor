@@ -38,7 +38,8 @@
     else if (section == Section.Stems)
     {
         <p class="list-hint">Forms that change so much you can't see the verb. Learn the stem once and every form with it falls into place.</p>
-        <button type="button" class="primary wide" @onclick="() => Start(strangeOnly: true)">Practise strange stems</button>
+        <button type="button" class="primary wide" disabled="@(ActiveTenses.Count == 0)" @onclick="() => Start(strangeOnly: true)">Practise strange stems</button>
+        <p class="dc-note">@($"Practice uses your Decode tenses: {TenseList(ActiveTenses)}.")</p>
         @foreach (var (title, stems) in VerbDecode.StrangeStems)
         {
             <section class="dc-guide">
@@ -89,7 +90,7 @@
         }
         <div class="vp-card dc-start">
             <div class="vp-tense">Decode</div>
-            <p class="dc-start-text">You see (or hear) a verb form. Say which verb it is, who's doing it and when. Forms that don't look like their verb come up most.</p>
+            <p class="dc-start-text">You see (or hear) a verb form. Say which verb it is, who's doing it and when.</p>
             <div class="segmented" role="tablist" aria-label="How to show the form">
                 <button type="button" role="tab" class="seg @(mode == VerbDecode.Mode.Read ? "on" : "")" @onclick="() => mode = VerbDecode.Mode.Read">On its own</button>
                 <button type="button" role="tab" class="seg @(mode == VerbDecode.Mode.Sentence ? "on" : "")" @onclick="() => mode = VerbDecode.Mode.Sentence">In a sentence</button>
@@ -98,11 +99,51 @@
                     <button type="button" role="tab" class="seg @(mode == VerbDecode.Mode.Listen ? "on" : "")" @onclick="() => mode = VerbDecode.Mode.Listen">Listen</button>
                 }
             </div>
+
+            <div class="dc-tenses">
+                <div class="dc-q-title">Tenses</div>
+                <div class="segmented" role="tablist" aria-label="Which tenses">
+                    <button type="button" role="tab" class="seg @(Custom ? "" : "on")" aria-selected="@(Custom ? "false" : "true")" @onclick="UseSmart">Smart</button>
+                    <button type="button" role="tab" class="seg @(Custom ? "on" : "")" aria-selected="@(Custom ? "true" : "false")" @onclick="UseCustom">My choice</button>
+                </div>
+                @if (!Custom)
+                {
+                    <p class="dc-note">@SmartText()</p>
+                }
+                else
+                {
+                    @foreach (var stage in VerbGrammar.Stages)
+                    {
+                        var inStage = VerbDecode.DecodeTenses.Where(t => VerbGrammar.TenseById[t].Stage == stage.Number).ToList();
+                        @if (inStage.Count > 0)
+                        {
+                            <div class="dc-stage-label">@stage.Title</div>
+                            <div class="dc-chips">
+                                @foreach (var t in inStage)
+                                {
+                                    var tt = t;
+                                    var on = ActiveTenses.Contains(tt);
+                                    <button type="button" class="chip @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")" @onclick="() => Toggle(tt)">@VerbGrammar.TenseById[tt].Name</button>
+                                }
+                            </div>
+                        }
+                    }
+                    @if (ActiveTenses.Count == 0)
+                    {
+                        <p class="dc-note">Pick at least one tense.</p>
+                    }
+                }
+                <p class="dc-note">@LevelText()</p>
+            </div>
             <label class="check-row">
                 <input type="checkbox" @bind="strangeOnly" />
                 <span>Strange stems only</span>
             </label>
-            <button type="button" class="primary wide" @onclick="() => Start(strangeOnly)">@(round is null ? "Start" : "Another round")</button>
+            <button type="button" class="primary wide" disabled="@(ActiveTenses.Count == 0)" @onclick="() => Start(strangeOnly)">@(round is null ? "Start" : "Another round")</button>
+            @if (emptyRound)
+            {
+                <p class="dc-note">Nothing to practise with these settings. Try more tenses, or turn off <em>Strange stems only</em>.</p>
+            }
             <p class="dc-count">@CountText()</p>
         </div>
     }
@@ -255,12 +296,89 @@
         }
     }
 
+    private bool emptyRound;
+
     private void Start(bool strangeOnly)
     {
         DecodeView.strangeOnly = strangeOnly;
         section = Section.Practise;
-        round = new DecodeRound(Decode, mode, strangeOnly, Progress);
+        var r = new DecodeRound(Decode, mode, strangeOnly, ActiveTenses, Progress);
+        emptyRound = r.Items.Count == 0;
+        round = emptyRound ? null : r;
         spokenIndex = -1;
+    }
+
+    // ------------------------------------------------------------------ which tenses
+
+    /// <summary>You picked your own tenses (otherwise Smart decides).</summary>
+    private bool Custom => Progress.DecodeTenses is not null;
+
+    private List<string> ActiveTenses => Progress.DecodeTenses is { } mine
+        ? VerbDecode.DecodeTenses.Where(mine.Contains).ToList()
+        : VerbDecode.SmartTenses(Progress.VerbSkills);
+
+    private async Task UseSmart()
+    {
+        if (!Custom) return;
+        Progress.DecodeTenses = null;
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task UseCustom()
+    {
+        if (Custom) return;
+        Progress.DecodeTenses = ActiveTenses;
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task Toggle(string tense)
+    {
+        var list = ActiveTenses;
+        if (!list.Remove(tense)) list.Add(tense);
+        Progress.DecodeTenses = list;
+        emptyRound = false;
+        await OnSaved.InvokeAsync();
+    }
+
+    /// <summary>Start a fresh Decode set-up on these tenses (from "Practise reading" in the tree).</summary>
+    public static void Focus(Progress progress, IEnumerable<string> tenses)
+    {
+        var wanted = tenses.ToHashSet();
+        progress.DecodeTenses = VerbDecode.DecodeTenses.Where(t => wanted.Contains(t)).ToList();
+        section = Section.Practise;
+        strangeOnly = false;
+        if (round is null || round.Done) round = null;
+    }
+
+    private static string TenseList(IReadOnlyList<string> tenses)
+    {
+        var names = tenses.Select(t => VerbGrammar.TenseById[t].Name.ToLowerInvariant()).ToList();
+        return names.Count switch
+        {
+            0 => "none",
+            1 => names[0],
+            _ => string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1],
+        };
+    }
+
+    private string SmartText()
+    {
+        var extra = ActiveTenses.Where(t => VerbGrammar.TenseById[t].Stage != 1).ToList();
+        return extra.Count == 0
+            ? "Present, preterite and imperfect. Tenses you practise in the tree join in automatically."
+            : $"Present, preterite and imperfect, plus what you've practised: {TenseList(extra)}.";
+    }
+
+    private string LevelText()
+    {
+        var tenses = ActiveTenses;
+        if (tenses.Count == 0) return "";
+        var ramp = tenses.Average(t => VerbDecode.Ramp(t, Progress.VerbSkills));
+        return ramp < 0.5
+            ? "Easy forms first: mostly ones that look like their verb. Harder ones come in as you get these right."
+            : ramp < 1
+                ? "Mixing in harder forms as you improve."
+                : "Full mix: forms that don't look like their verb come up most.";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

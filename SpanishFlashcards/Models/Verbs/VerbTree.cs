@@ -87,7 +87,7 @@ public static class VerbTree
 
     public static string TypeTitle(string type, string tense) => type switch
     {
-        "reg" => "Regular verbs",
+        "reg" => tense == "near" ? "Every verb" : "Regular verbs",
         "stem" => tense is "pret" or "impsubj" ? "Stem-changing -ir verbs" : "Stem-changing verbs",
         "yo" => tense == "pres" ? "Irregular yo form" : "From the yo form",
         "spell" => "Spelling changes",

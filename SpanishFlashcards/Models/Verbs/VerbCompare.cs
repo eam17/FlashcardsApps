@@ -42,6 +42,13 @@ public static class VerbCompare
         var reg = RegularName(v, t);
         var lines = new List<string>();
 
+        if (info.IsGoingTo)
+        {
+            lines.Add("The same for every verb: *voy a* + the infinitive.");
+            if (v.Reflexive) lines.Add($"The pronoun goes in front (*{v.Form(t, 0)}*) or on the end (*voy a {v.Inf[..^2]}me*). Both are right.");
+            return lines;
+        }
+
         if (info.IsCompound)
         {
             var regPp = v.PatternStem("perf") + (v.Class == "ar" ? "ado" : "ido");
@@ -135,7 +142,7 @@ public static class VerbCompare
         if (VerbGrammar.TenseById[t].IsCompound)
         {
             var regPp = v.PatternStem("perf") + (v.Class == "ar" ? "ado" : "ido");
-            if (v.Participle != regPp || v.Reflexive)
+            if (v.Reflexive || (!VerbGrammar.TenseById[t].IsGoingTo && v.Participle != regPp))
                 for (var p = 0; p < 6; p++) if (v.HasForm(t, p)) set.Add(p);
             return set;
         }

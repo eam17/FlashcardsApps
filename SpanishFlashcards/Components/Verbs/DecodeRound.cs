@@ -12,13 +12,14 @@ public sealed class DecodeRound
 {
     public sealed record Result(DecodeItem Item, Grade Grade, string Verb, string Who, string When);
 
-    public DecodeRound(VerbDecode decode, VerbDecode.Mode mode, bool strangeOnly, Progress progress)
+    public DecodeRound(VerbDecode decode, VerbDecode.Mode mode, bool strangeOnly, IReadOnlyCollection<string> tenses, Progress progress)
     {
         Decode = decode;
         Mode = mode;
         StrangeOnly = strangeOnly;
+        Tenses = tenses.ToList();
         Progress = progress;
-        Items = decode.BuildSession(mode, strangeOnly, progress.VerbSkills);
+        Items = decode.BuildSession(mode, strangeOnly, progress.VerbSkills, Tenses);
         Ask();
     }
 
@@ -26,6 +27,9 @@ public sealed class DecodeRound
     private Progress Progress { get; }
     public VerbDecode.Mode Mode { get; }
     public bool StrangeOnly { get; }
+
+    /// <summary>The tenses this round was built from.</summary>
+    public IReadOnlyList<string> Tenses { get; }
 
     public List<DecodeItem> Items { get; }
     public List<Result> Results { get; } = new();
@@ -51,7 +55,7 @@ public sealed class DecodeRound
         Answered = false;
         if (Item is not { } item) return;
         VerbChoices = Decode.VerbOptions(item);
-        WhenChoices = VerbDecode.WhenOptions(item);
+        WhenChoices = VerbDecode.WhenOptions(item, Tenses);
     }
 
     public bool Check()

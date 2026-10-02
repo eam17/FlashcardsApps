@@ -100,6 +100,7 @@ public static class VerbRules
             new RuleSection("Colours in the tables", [new RuleColorKey()]),
             new RuleSection("How this tab is organised",
             [
+                new RulePara("Tenses are grouped into four stages, most useful first: **Start here**, **Next**, **Later** and **Recognise only**. The dots show how often you meet each one (●●●● everyday, ● rare). The order is a suggestion: you can open anything at any time."),
                 new RuleList([
                     "**Tense**: when it happens, or a mood (subjunctive, commands).",
                     "**Type**: regular verbs, stem-changing verbs, unique verbs…",
@@ -156,6 +157,17 @@ public static class VerbRules
             [("Skip the yo", "The ending already says who: *hablo* = I speak. Add *yo* only for emphasis.")],
             null,
             Q("How do you say \"I'm eating\"?", ["como", "estoy comer", "comí", "comeré"], "*Como* means both \"I eat\" and \"I'm eating\".")),
+        "near" => new(
+            "What you're going to do: *Voy a comer* (I'm going to eat). In conversation it's more common than the future tense, and the easiest way to talk about plans.",
+            "The present of *ir* (to go), then *a*, then the infinitive, which never changes. If you know *voy, vas, va, vamos, vais, van*, you know this for every verb.",
+            [("[Voy a llamar] a mi madre.", "I'm going to call my mother."), ("¿Qué [vas a hacer] mañana?", "What are you going to do tomorrow?"), ("[Va a llover].", "It's going to rain.")],
+            ["mañana", "esta noche", "luego", "el fin de semana"],
+            "Nothing: only *ir* changes, and its present is the one you already know. Reflexive verbs put the pronoun in front (*me voy a levantar*) or on the end (*voy a levantarme*).",
+            [("Don't forget the a", "*Voy a comer*, not *voy comer*. The *a* is always there."),
+             ("Only ir changes", "The second verb stays as the infinitive: *vamos a salir*, never *vamos a salimos*."),
+             ("Was going to", "Swap in the imperfect of *ir* for \"was going to\": *iba a llamarte* (I was going to call you).")],
+            null,
+            Q("How do you say \"We're going to eat\"?", ["vamos a comer", "vamos comer", "vamos a comemos", "comeremos a"], "*vamos* (we go) + *a* + the infinitive *comer*.")),
         "pret" => new(
             "Finished actions at a definite time: *I spoke, she ate*. Use it for the events of a story.",
             "Drop the ending and add these. *-er* and *-ir* verbs share the same endings.",
@@ -181,7 +193,7 @@ public static class VerbRules
             ["mañana", "la semana que viene", "pronto", "algún día"],
             "About a dozen verbs use a shorter stem: *tendré, podré, diré*. The endings stay the same.",
             [("Endings you already know", "They sound like *haber*: *he, has, ha, hemos, habéis, han* → *-é, -ás, -á, -emos, -éis, -án*. That's where they came from."),
-             ("In conversation", "*Voy a comer* (I'm going to eat) is often used instead, like English \"going to\".")],
+             ("In conversation", "*Voy a comer* (I'm going to eat) is often used instead, like English \"going to\". It has its own item: **Going to (ir a)**.")],
             "fut-cond",
             Q("Which means \"I will speak\"?", ["hablaré", "hablaría", "hablé", "hable"], "Infinitive + *-é*: *hablaré*.")),
         "cond" => new(
@@ -404,6 +416,7 @@ public static class VerbRules
         ("stem", "pres" or "subj") => ("Boot verbs", "Draw a line around the forms that change and you get a boot: *nosotros* and *vosotros* stay outside it."),
         ("spell", _) => ("Spanish spells by sound", "Before *e*: *c* → *qu*, *g* → *gu*, *z* → *c*. Before *a* or *o*: *g* → *j*. The word still sounds regular."),
         ("refl", "cmd") => ("Pronoun on the end", "\"Do\" commands attach it: *acuérdate, siéntese*. *Nosotros* drops its *-s* (*acordémonos*), *vosotros* its *-d* (*acordaos*)."),
+        ("refl", "near") => ("Front or end", "*me voy a levantar* or *voy a levantarme*: both are right, and both are accepted in practice."),
         ("refl", _) => ("Pronoun first", "*me acuerdo*, *me he acordado*: the pronoun comes before the verb, and before *haber*."),
         ("irr", "pres") => ("Two verbs for \"to be\"", "*Soy* for what you are (*soy alta*), *estoy* for how or where you are (*estoy cansada*)."),
         ("irr", "pret") => ("fui = went or was", "*Ser* and *ir* share the preterite: *Fui al cine* (I went), *Fui feliz* (I was happy)."),
@@ -517,6 +530,7 @@ public static class VerbRules
         return t switch
         {
             "fut" or "cond" => "Keep the whole infinitive and add the ending. Same endings for every verb.",
+            "near" => "*voy, vas, va, vamos, vais, van* + *a* + the infinitive. Exactly the same for every verb.",
             "perf" or "plup" or "futperf" or "condperf" or "subjperf" or "plupsubj" =>
                 $"*haber* + the participle: the stem + {(pattern == "ar" ? "*-ado*" : "*-ido*")}. Only *haber* changes.",
             "cmd" => $"{drop}. *tú* = the *él* form; *vosotros* = infinitive with *-d*; the rest come from the subjunctive.",
@@ -631,6 +645,17 @@ public static class VerbRules
             var space = form.IndexOf(' ');
             if (space < 0) return null;
             items.Add(new RecipeChip(form[..space], PartKind.Pronoun));
+            items.Add(new RecipeOp("+"));
+            items.Add(new RecipeChip(form[(space + 1)..], null));
+            items.Add(new RecipeOp("="));
+            items.Add(new RecipeForm(v, t, p, form));
+            return new RecipeLine(VerbGrammar.Persons[p].Label, items);
+        }
+
+        if (info.IsGoingTo)
+        {
+            var space = form.LastIndexOf(' ');
+            items.Add(new RecipeChip(form[..space], PartKind.Helper));
             items.Add(new RecipeOp("+"));
             items.Add(new RecipeChip(form[(space + 1)..], null));
             items.Add(new RecipeOp("="));

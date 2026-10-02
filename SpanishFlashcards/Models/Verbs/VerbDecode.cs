@@ -163,6 +163,7 @@ public sealed class VerbDecode
     public static string TenseLabel(string t) => t switch
     {
         "pres" => "Present (does)",
+        "near" => "Going to (ir a)",
         "pret" => "Preterite (did)",
         "impf" => "Imperfect (was doing, used to)",
         "fut" => "Future (will)",
@@ -187,6 +188,42 @@ public sealed class VerbDecode
     private static readonly string[] SimpleTenses = ["pres", "pret", "impf", "fut", "cond", "subj", "impsubj", "cmd"];
     private static readonly string[] CompoundTenses = ["perf", "plup", "futperf", "condperf", "subjperf", "plupsubj"];
 
+    /// <summary>Tenses Decode can ask about, in learning order ("going to" is left out: it's always voy a + infinitive).</summary>
+    public static IReadOnlyList<string> DecodeTenses { get; } =
+        VerbGrammar.Tenses.Select(t => t.Id).Where(t => SimpleTenses.Contains(t) || CompoundTenses.Contains(t)).ToList();
+
+    /// <summary>
+    /// The tenses Decode uses when you haven't picked your own: the "Start here" stage plus any tense you've
+    /// practised in the tree or already decoded.
+    /// </summary>
+    public static List<string> SmartTenses(IReadOnlyDictionary<string, VerbSkill> skills)
+    {
+        var set = VerbGrammar.Tenses.Where(t => t.Stage == 1).Select(t => t.Id).ToHashSet();
+        foreach (var (key, skill) in skills)
+        {
+            if (!VerbSrs.IsSeen(skill)) continue;
+            var parts = (key.StartsWith("dec:", StringComparison.Ordinal) ? key[4..] : key).Split('|');
+            if (parts.Length == 3) set.Add(parts[1]);
+        }
+        return DecodeTenses.Where(set.Contains).ToList();
+    }
+
+    /// <summary>Decoded forms in a tense you got right at least once or twice (strength 0.4 or more).</summary>
+    public static int SolidIn(string tense, IReadOnlyDictionary<string, VerbSkill> skills) =>
+        skills.Count(kv => kv.Key.StartsWith("dec:", StringComparison.Ordinal)
+                           && kv.Key.Split('|') is { Length: 3 } k && k[1] == tense && kv.Value.Strength >= 0.4);
+
+    /// <summary>Solid forms in a tense before the hardest forms come at full strength.</summary>
+    public const int RampForms = 15;
+
+    /// <summary>
+    /// How far the hard forms are favoured in a tense: 0 when you're new to it (every form as likely as any
+    /// other, so mostly regular ones: in the present about 1 in 10 is a form that doesn't look like its verb),
+    /// up to 1 (the full mix, about 2 in 3) once you've decoded <see cref="RampForms"/> forms of it correctly.
+    /// </summary>
+    public static double Ramp(string tense, IReadOnlyDictionary<string, VerbSkill> skills) =>
+        Math.Min(1, SolidIn(tense, skills) / (double)RampForms);
+
     // ------------------------------------------------------------------ the pool
 
     private readonly VerbBook book;
@@ -208,14 +245,12 @@ public sealed class VerbDecode
         {
             foreach (var t in SimpleTenses.Concat(CompoundTenses))
             {
-                var compound = VerbGrammar.TenseById[t].IsCompound;
-                if (compound && v.Participle == RegularParticiple(v)) continue; // nothing to decode
                 for (var p = 0; p < VerbGrammar.PersonsFor(t).Count; p++)
                 {
                     var form = v.Form(t, p);
                     if (form is null) continue;
                     var strange = IsStrange(v, t, form);
-                    items.Add(new DecodeItem(v, t, p, form, ReadingsOf(form), Weight(v, t, p, form, strange) * (compound ? 0.5 : 1), strange));
+                    items.Add(new DecodeItem(v, t, p, form, ReadingsOf(form), Weight(v, t, p, form, strange), strange));
                 }
             }
         }
@@ -253,23 +288,37 @@ public sealed class VerbDecode
     public IReadOnlyList<DecodeReading> ReadingsOf(string form) =>
         index.TryGetValue(form.ToLowerInvariant(), out var list) ? list : [];
 
-    private static string RegularParticiple(Verb v) => v.PatternStem("perf") + (v.Class == "ar" ? "ado" : "ido");
-
     /// <summary>The verb word of a form: the participle in "he hecho", the verb in "me acuerdo".</summary>
     private static string Word(string form) => form.Split(' ')[^1];
+
+    /// <summary>The strange stems table indexed by (verb, tense), so looking a form up is quick.</summary>
+    private static readonly Dictionary<(string Inf, string Tense), List<StrangeStem>> StemsByVerbTense = BuildStemIndex();
+
+    private static Dictionary<(string, string), List<StrangeStem>> BuildStemIndex()
+    {
+        var d = new Dictionary<(string, string), List<StrangeStem>>();
+        foreach (var (_, stems) in StrangeStems)
+            foreach (var s in stems)
+                foreach (var inf in s.Verbs)
+                    foreach (var t in s.Tenses)
+                    {
+                        if (!d.TryGetValue((inf, t), out var list)) d[(inf, t)] = list = new();
+                        list.Add(s);
+                    }
+        return d;
+    }
 
     public static StrangeStem? StemFor(Verb v, string t, string form)
     {
         var word = AnswerCheck.StripAccents(Word(form).ToLowerInvariant());
         var tense = VerbGrammar.TenseById[t].IsCompound ? "perf" : t;
         var inf = v.Reflexive ? v.Inf[..^2] : v.Inf;
-        foreach (var (_, stems) in StrangeStems)
-            foreach (var s in stems)
-            {
-                if (!s.Verbs.Contains(inf) || !s.Tenses.Contains(tense)) continue;
-                var hit = s.Stems.Select(x => AnswerCheck.StripAccents(x)).Any(x => s.Whole ? word == x : word.StartsWith(x, StringComparison.Ordinal));
-                if (hit) return s;
-            }
+        if (!StemsByVerbTense.TryGetValue((inf, tense), out var candidates)) return null;
+        foreach (var s in candidates)
+        {
+            var hit = s.Stems.Select(x => AnswerCheck.StripAccents(x)).Any(x => s.Whole ? word == x : word.StartsWith(x, StringComparison.Ordinal));
+            if (hit) return s;
+        }
         return null;
     }
 
@@ -299,12 +348,16 @@ public sealed class VerbDecode
     /// Ten forms: due ones first, then a few you got wrong or found hard, then new ones chosen at random but
     /// leaning heavily towards forms that don't look like their verb. No verb twice in a round.
     /// </summary>
-    public List<DecodeItem> BuildSession(Mode mode, bool strangeOnly, IReadOnlyDictionary<string, VerbSkill> skills, int size = 10)
+    public List<DecodeItem> BuildSession(Mode mode, bool strangeOnly, IReadOnlyDictionary<string, VerbSkill> skills,
+                                         IReadOnlyCollection<string> tenses, int size = 10)
     {
         var rng = Random.Shared;
         var pool = (mode == Mode.Sentence ? StoryItems : Items)
-            .Where(i => VerbSettings.IsActive(i.Tense, i.Person) && (!strangeOnly || i.Strange))
+            .Where(i => tenses.Contains(i.Tense) && VerbSettings.IsActive(i.Tense, i.Person) && (!strangeOnly || i.Strange))
             .ToList();
+        // Easy first: in a tense you're new to, the hard forms come less often (see Ramp).
+        var ramp = tenses.ToDictionary(t => t, t => strangeOnly ? 1 : Ramp(t, skills));
+        double W(DecodeItem i) => 1 + (i.Weight - 1) * ramp.GetValueOrDefault(i.Tense, 1);
         VerbSkill? S(DecodeItem i) => skills.TryGetValue(i.Key, out var s) ? s : null;
         var now = DateTime.UtcNow;
         var picks = new List<DecodeItem>();
@@ -330,12 +383,12 @@ public sealed class VerbDecode
         var guard = 0;
         while (picks.Count < size && fresh.Count > 0 && guard++ < 500)
         {
-            var total = fresh.Sum(i => i.Weight);
+            var total = fresh.Sum(W);
             var roll = rng.NextDouble() * total;
             var k = 0;
             for (; k < fresh.Count - 1; k++)
             {
-                roll -= fresh[k].Weight;
+                roll -= W(fresh[k]);
                 if (roll <= 0) break;
             }
             var item = fresh[k];
@@ -368,13 +421,18 @@ public sealed class VerbDecode
         return right.Concat(others).OrderBy(_ => rng.Next()).ToList();
     }
 
-    /// <summary>6 tenses: the right one(s), look-alikes and common ones, in the usual order.</summary>
-    public static List<string> WhenOptions(DecodeItem item)
+    /// <summary>
+    /// 6 tenses: the right one(s), then the tenses you're decoding, then others of the same kind (one word or
+    /// two), in the usual order.
+    /// </summary>
+    public static List<string> WhenOptions(DecodeItem item, IReadOnlyCollection<string> chosen)
     {
         var rng = Random.Shared;
         var set = item.Readings.Select(r => r.Tense).Distinct().ToList();
         var compound = VerbGrammar.TenseById[item.Tense].IsCompound;
-        var fill = (compound ? CompoundTenses : SimpleTenses).OrderBy(_ => rng.Next());
+        var kind = compound ? CompoundTenses : SimpleTenses;
+        var fill = kind.Where(t => chosen.Contains(t)).OrderBy(_ => rng.Next())
+            .Concat(kind.Where(t => !chosen.Contains(t)).OrderBy(_ => rng.Next()));
         foreach (var t in fill)
         {
             if (set.Count >= 6) break;

@@ -49,6 +49,9 @@ public sealed class Progress
     /// <summary>Verbs tab: latest test result per tree item (keyed by item id, e.g. "t:pres/stem/o-ue").</summary>
     public Dictionary<string, VerbTestRecord> VerbTests { get; set; } = new();
 
+    /// <summary>Verbs tab, Decode: the tenses you picked (null = Smart: the first stage plus what you've practised).</summary>
+    public List<string>? DecodeTenses { get; set; }
+
     /// <summary>Old format ("known"/"learning" per word). Converted to <see cref="Cards"/> on load.</summary>
     public Dictionary<string, string>? Status { get; set; }
 }

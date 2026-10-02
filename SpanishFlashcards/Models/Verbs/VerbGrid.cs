@@ -47,7 +47,7 @@ public sealed class VerbGrid
         };
         foreach (var row in patterns)
         {
-            foreach (var t in VerbGrammar.Tenses)
+            foreach (var t in VerbGrammar.GridTenses)
             {
                 var pat = t.Id is "fut" or "cond" ? "inf"
                     : t.Id is "pres" or "cmd" ? row.Class!
@@ -63,7 +63,7 @@ public sealed class VerbGrid
         {
             var row = new GridRow(v.Inf, v.Inf, v.En, null, v);
             var any = false;
-            foreach (var t in VerbGrammar.Tenses)
+            foreach (var t in VerbGrammar.GridTenses)
             {
                 var forms = new List<FormRef>();
                 for (var p = 0; p < VerbGrammar.PersonsFor(t.Id).Count; p++)
@@ -114,7 +114,7 @@ public sealed class VerbGrid
     /// <summary>A row's average over the tenses where it has tracked forms you've started (for "weakest first").</summary>
     public double RowScore(GridRow row, IReadOnlyDictionary<string, VerbSkill> skills)
     {
-        var scores = VerbGrammar.Tenses.Select(t => Score(Cell(row, t.Id), skills)).Where(x => x.Started).Select(x => x.Score).ToList();
+        var scores = VerbGrammar.GridTenses.Select(t => Score(Cell(row, t.Id), skills)).Where(x => x.Started).Select(x => x.Score).ToList();
         return scores.Count == 0 ? double.MaxValue : scores.Average();
     }
 

@@ -23,7 +23,7 @@
             <thead>
                 <tr>
                     <th class="vg-corner" scope="col">Verb</th>
-                    @foreach (var t in VerbGrammar.Tenses)
+                    @foreach (var t in VerbGrammar.GridTenses)
                     {
                         <th scope="col" title="@t.Name"><span class="vg-col">@VerbGrid.Short(t.Id)</span></th>
                     }
@@ -33,14 +33,14 @@
                 @{ var patterns = Grid.Patterns.Where(Matches).ToList(); }
                 @if (patterns.Count > 0)
                 {
-                    <tr class="vg-section"><th scope="colgroup" colspan="@(VerbGrammar.Tenses.Count + 1)">Regular verbs (by ending)</th></tr>
+                    <tr class="vg-section"><th scope="colgroup" colspan="@(VerbGrammar.GridTenses.Count() + 1)">Regular verbs (by ending)</th></tr>
                     @foreach (var row in patterns)
                     {
                         @Row(row)
                     }
                 }
                 @{ var verbs = OrderedVerbs(); }
-                <tr class="vg-section"><th scope="colgroup" colspan="@(VerbGrammar.Tenses.Count + 1)">@($"Verbs with irregular forms ({verbs.Count})")</th></tr>
+                <tr class="vg-section"><th scope="colgroup" colspan="@(VerbGrammar.GridTenses.Count() + 1)">@($"Verbs with irregular forms ({verbs.Count})")</th></tr>
                 @foreach (var row in verbs)
                 {
                     @Row(row)
@@ -144,7 +144,7 @@
             <span class="vg-inf" lang="@(row.IsPattern ? "en" : "es")">@row.Title</span>
             <span class="vg-en">@row.Subtitle</span>
         </th>
-        @foreach (var t in VerbGrammar.Tenses)
+        @foreach (var t in VerbGrammar.GridTenses)
         {
             var cell = Grid.Cell(row, t.Id);
             if (cell.Forms.Count == 0 && !cell.RegularHere)

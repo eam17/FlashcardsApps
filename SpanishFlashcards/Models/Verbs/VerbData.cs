@@ -6,12 +6,26 @@ public sealed record TenseInfo(
     string Name,
     string Spanish,
     string English,
-    // For compound tenses: the tense of haber they use (e.g. "pres" for he hablado).
+    // Learning stage: 1 = start here, 2 = next, 3 = later, 4 = recognise only (see VerbGrammar.Stages).
+    int Stage,
+    // How often you meet it: 4 = everyday, 3 = very common, 2 = common, 1 = rare.
+    int Frequency,
+    // For compound tenses: the tense of the helper verb (e.g. "pres" for he hablado, voy a hablar).
     string? HaberTense = null)
 {
+    /// <summary>Two words: a helper verb + the main verb (he hablado, voy a hablar).</summary>
     public bool IsCompound => HaberTense is not null;
     public bool IsCommand => Id == "cmd";
+
+    /// <summary>ir a + infinitive (voy a hablar): the helper is ir, not haber, and the main verb stays as it is.</summary>
+    public bool IsGoingTo => Id == "near";
+
+    /// <summary>"Everyday", "Very common", "Common" or "Rare".</summary>
+    public string FrequencyLabel => VerbGrammar.FrequencyLabel(Frequency);
 }
+
+/// <summary>A group of tenses in the suggested learning order.</summary>
+public sealed record TenseStage(int Number, string Title, string Blurb);
 
 /// <summary>A person slot in a conjugation table (yo, tú… or a command form).</summary>
 public sealed record PersonInfo(string Id, string Label, string English, string Group, bool Negative = false);
@@ -37,24 +51,50 @@ public static class VerbSettings
 
 public static class VerbGrammar
 {
-    /// <summary>Tenses in teaching order. Not taught: future subjunctive, preterite perfect (hube hablado).</summary>
+    /// <summary>
+    /// Tenses in the suggested learning order: the ones you meet most first. Not taught: future subjunctive,
+    /// preterite perfect (hube hablado).
+    /// </summary>
     public static readonly IReadOnlyList<TenseInfo> Tenses =
     [
-        new("pres", "Present", "presente", "I speak, I'm speaking"),
-        new("pret", "Preterite", "pretérito indefinido", "I spoke"),
-        new("impf", "Imperfect", "pretérito imperfecto", "I used to speak, I was speaking"),
-        new("fut", "Future", "futuro", "I will speak"),
-        new("cond", "Conditional", "condicional", "I would speak"),
-        new("perf", "Present perfect", "pretérito perfecto", "I have spoken", HaberTense: "pres"),
-        new("subj", "Present subjunctive", "presente de subjuntivo", "(that) I speak"),
-        new("cmd", "Commands", "imperativo", "Speak! Don't speak!"),
-        new("impsubj", "Imperfect subjunctive", "imperfecto de subjuntivo", "(if) I spoke, (that) I would speak"),
-        new("plup", "Pluperfect", "pluscuamperfecto", "I had spoken", HaberTense: "impf"),
-        new("futperf", "Future perfect", "futuro perfecto", "I will have spoken", HaberTense: "fut"),
-        new("condperf", "Conditional perfect", "condicional perfecto", "I would have spoken", HaberTense: "cond"),
-        new("subjperf", "Present perfect subjunctive", "pretérito perfecto de subjuntivo", "(that) I have spoken", HaberTense: "subj"),
-        new("plupsubj", "Pluperfect subjunctive", "pluscuamperfecto de subjuntivo", "(if) I had spoken", HaberTense: "impsubj"),
+        new("pres", "Present", "presente", "I speak, I'm speaking", 1, 4),
+        new("near", "Going to (ir a)", "ir a + infinitivo", "I'm going to speak", 1, 3, HaberTense: "pres"),
+        new("pret", "Preterite", "pretérito indefinido", "I spoke", 1, 4),
+        new("impf", "Imperfect", "pretérito imperfecto", "I used to speak, I was speaking", 1, 3),
+        new("perf", "Present perfect", "pretérito perfecto", "I have spoken", 2, 3, HaberTense: "pres"),
+        new("cmd", "Commands", "imperativo", "Speak! Don't speak!", 2, 3),
+        new("subj", "Present subjunctive", "presente de subjuntivo", "(that) I speak", 2, 3),
+        new("fut", "Future", "futuro", "I will speak", 2, 2),
+        new("cond", "Conditional", "condicional", "I would speak", 3, 2),
+        new("impsubj", "Imperfect subjunctive", "imperfecto de subjuntivo", "(if) I spoke, (that) I would speak", 3, 2),
+        new("plup", "Pluperfect", "pluscuamperfecto", "I had spoken", 3, 2, HaberTense: "impf"),
+        new("futperf", "Future perfect", "futuro perfecto", "I will have spoken", 4, 1, HaberTense: "fut"),
+        new("condperf", "Conditional perfect", "condicional perfecto", "I would have spoken", 4, 1, HaberTense: "cond"),
+        new("subjperf", "Present perfect subjunctive", "pretérito perfecto de subjuntivo", "(that) I have spoken", 4, 1, HaberTense: "subj"),
+        new("plupsubj", "Pluperfect subjunctive", "pluscuamperfecto de subjuntivo", "(if) I had spoken", 4, 1, HaberTense: "impsubj"),
     ];
+
+    public static readonly IReadOnlyList<TenseStage> Stages =
+    [
+        new(1, "Start here", "What you'll hear in almost every conversation."),
+        new(2, "Next", "Common in conversation: experiences, orders, wishes, plans."),
+        new(3, "Later", "For \"would\", \"if\" and stories about the past."),
+        new(4, "Recognise only", "Rare in conversation. Being able to recognise them when you read is enough."),
+    ];
+
+    public static string FrequencyLabel(int frequency) => frequency switch
+    {
+        >= 4 => "Everyday",
+        3 => "Very common",
+        2 => "Common",
+        _ => "Rare",
+    };
+
+    /// <summary>Tenses with a column in the grid (not "going to": it's the same for every verb).</summary>
+    public static IEnumerable<TenseInfo> GridTenses => Tenses.Where(t => !t.IsGoingTo);
+
+    /// <summary>Present of ir, the helper in "going to".</summary>
+    public static readonly string[] IrPresent = ["voy", "vas", "va", "vamos", "vais", "van"];
 
     public static readonly IReadOnlyDictionary<string, TenseInfo> TenseById = Tenses.ToDictionary(t => t.Id);
 
@@ -190,7 +230,7 @@ public sealed class Verb
     /// <summary>The pattern a verb follows in a tense: "ar", "er", "ir", "er-ir" or "inf" (whole infinitive).</summary>
     public string PatternIn(string tense) => tense switch
     {
-        "fut" or "cond" => "inf",
+        "fut" or "cond" or "near" => "inf",
         "pres" or "cmd" => Class,
         _ => Class == "ar" ? "ar" : "er-ir",
     };
@@ -199,7 +239,7 @@ public sealed class Verb
     public string PatternStem(string tense)
     {
         var bare = Reflexive ? Inf[..^2] : Inf;
-        return tense is "fut" or "cond" ? bare : bare[..^2];
+        return tense is "fut" or "cond" or "near" ? bare : bare[..^2];
     }
 
     public static Verb FromDto(VerbDto d, int rank, Verb? haber)
@@ -224,7 +264,7 @@ public sealed class Verb
         var h = haber ?? (d.Inf == "haber" ? v : null);
         if (h is not null)
         {
-            foreach (var tense in VerbGrammar.Tenses.Where(t => t.IsCompound))
+            foreach (var tense in VerbGrammar.Tenses.Where(t => t.IsCompound && !t.IsGoingTo))
             {
                 var forms = new string?[6];
                 var whys = new string?[6];
@@ -243,6 +283,27 @@ public sealed class Verb
                 if (whys.Any(w => w is not null)) v.Whys[tense.Id] = whys;
                 if (regs.Any(r => r is not null)) v.Regs[tense.Id] = regs;
             }
+        }
+
+        // Going to: (pronoun) + voy a + infinitive. Same for every verb; reflexive verbs can also put the
+        // pronoun on the end (voy a levantarme), and both are accepted.
+        {
+            var forms = new string?[6];
+            var whys = new string?[6];
+            for (var p = 0; p < 6; p++)
+            {
+                if (d.Only3 && p != 2) continue;
+                var ir = VerbGrammar.IrPresent[p];
+                if (d.Refl)
+                {
+                    var pron = VerbGrammar.ReflexivePronouns[p];
+                    forms[p] = $"{pron} {ir} a {bare}|{ir} a {bare}{pron}";
+                    whys[p] = "refl";
+                }
+                else forms[p] = $"{ir} a {bare}";
+            }
+            v.Forms["near"] = forms;
+            if (whys.Any(w => w is not null)) v.Whys["near"] = whys;
         }
         return v;
     }
