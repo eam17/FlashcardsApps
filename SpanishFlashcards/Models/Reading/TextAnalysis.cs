@@ -61,10 +61,18 @@ public sealed class ReadToken
     public IReadOnlyList<ReadReading> Readings { get; set; } = Array.Empty<ReadReading>();
     /// <summary>The whole phrase text for a phrase start ("he comido"); otherwise the word.</summary>
     public string Phrase { get; set; } = "";
+    /// <summary>An extra line for the word's info ("Past participle of llamar.").</summary>
+    public string? Note { get; set; }
 }
 
-/// <summary>How much of the text is in one tense (shared forms are split between their tenses).</summary>
-public sealed record TenseUse(string Tense, double Count, IReadOnlyList<string> Examples);
+/// <summary>A verb form as it appears in the text, and the token where it first appears.</summary>
+public sealed record TenseExample(string Text, int Token);
+
+/// <summary>
+/// How much of the text is in one tense (shared forms are split between their tenses): a few different
+/// forms as examples, and every place a form of it starts (token indexes).
+/// </summary>
+public sealed record TenseUse(string Tense, double Count, IReadOnlyList<TenseExample> Examples, IReadOnlyList<int> Tokens);
 
 /// <summary>
 /// Reads a pasted text against what you know: which words are known, being learned or new, which words
@@ -129,6 +137,21 @@ public sealed class TextAnalysis
         if (!singles.ContainsKey("al") && singles.TryGetValue("a", out var al)) singles["al"] = al;
 
         var wordIdx = Enumerable.Range(0, a.Tokens.Count).Where(i => a.Tokens[i].IsWord).ToList();
+
+        // Past participles of the list's verbs, in all four forms: llamado, llamada, llamados, llamadas → llamar.
+        var participles = new Dictionary<string, Word>(StringComparer.Ordinal);
+        foreach (var (key, w) in singles)
+        {
+            if (w.Pos != "verb") continue;
+            var inf = key.Length > 4 && key.EndsWith("se") ? key[..^2] : key;
+            var verb = singles.GetValueOrDefault(inf) ?? w;
+            var pp = (book is not null && (book.ByInf.TryGetValue(key, out var bv) || book.ByInf.TryGetValue(inf, out bv)))
+                ? bv.Participle
+                : RegularParticiple(inf);
+            if (pp is null || !pp.EndsWith('o')) continue;
+            var stem = pp[..^1];
+            foreach (var f in new[] { pp, stem + "a", stem + "os", stem + "as" }) participles.TryAdd(f, verb);
+        }
 
         ReadUnit WordUnit(Word w) => a.Unit(w.Es, () => new ReadUnit
         {
@@ -225,6 +248,20 @@ public sealed class TextAnalysis
                 tok.IsName = true;
                 continue;
             }
+            // A participle of a verb in the list (llamado, hecha, abiertos) is that verb, even when the dictionary also
+            // has it as an adjective. Nouns stay their own word: el estado (state), la llamada (call), el resultado.
+            if (participles.TryGetValue(lower, out var pv))
+            {
+                var own = dict?.Lookup(lower).FirstOrDefault(e => string.Equals(e.Lemma, lower, StringComparison.OrdinalIgnoreCase));
+                if (own is null || own.Pos != "n")
+                {
+                    a.Place(ti, WordUnit(pv), Array.Empty<ReadReading>(), tok.Text);
+                    tok.Note = own is { Pos: "adj" } && own.Meaning.Length > 0
+                        ? $"Past participle of {pv.Es}. As an adjective: {own.Meaning}."
+                        : $"Past participle of {pv.Es}.";
+                    continue;
+                }
+            }
             if (dict?.Lookup(lower) is { Count: > 0 } entries)
             {
                 var listed = entries.FirstOrDefault(e => singles.ContainsKey(e.Lemma.ToLowerInvariant()));
@@ -298,6 +335,12 @@ public sealed class TextAnalysis
         }
         return list;
     }
+
+    /// <summary>hablar → hablado, comer → comido, vivir → vivido.</summary>
+    private static string? RegularParticiple(string inf) =>
+        inf.EndsWith("ar") ? inf[..^2] + "ado" :
+        inf.EndsWith("er") || inf.EndsWith("ir") ? inf[..^2] + "ido" :
+        null;
 
     /// <summary>Masculine singular guesses for a word: tanta → tanto, mesas → mesa, flores → flor.</summary>
     private static IEnumerable<string> BaseForms(string w)
@@ -432,20 +475,24 @@ public sealed class TextAnalysis
 
         // Tenses: each verb form shares its count between the tenses it could be (hablamos: present and preterite).
         var counts = new Dictionary<string, double>();
-        var examples = new Dictionary<string, List<string>>();
-        foreach (var t in Tokens)
+        var examples = new Dictionary<string, List<TenseExample>>();
+        var places = new Dictionary<string, List<int>>();
+        for (var i = 0; i < Tokens.Count; i++)
         {
+            var t = Tokens[i];
             if (t.Continues || t.Readings.Count == 0) continue;
             var tenses = t.Readings.Select(r => r.Tense).Distinct().ToList();
             foreach (var tense in tenses)
             {
                 counts[tense] = counts.GetValueOrDefault(tense) + 1.0 / tenses.Count;
                 if (!examples.TryGetValue(tense, out var list)) examples[tense] = list = new();
+                if (!places.TryGetValue(tense, out var at)) places[tense] = at = new();
+                at.Add(i);
                 var shown = t.Phrase.ToLowerInvariant();
-                if (list.Count < 5 && !list.Contains(shown)) list.Add(shown);
+                if (list.Count < 5 && !list.Any(e => e.Text == shown)) list.Add(new TenseExample(shown, i));
             }
         }
         Tenses.AddRange(counts.OrderByDescending(kv => kv.Value)
-            .Select(kv => new TenseUse(kv.Key, kv.Value, examples[kv.Key])));
+            .Select(kv => new TenseUse(kv.Key, kv.Value, examples[kv.Key], places[kv.Key])));
     }
 }

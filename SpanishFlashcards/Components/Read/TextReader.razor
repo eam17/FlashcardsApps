@@ -1,5 +1,6 @@
 @* One text in the Read tab: how much you can read, the words to learn first, the verb tenses it uses,
    and the text itself (tap any word). *@
+@inject IJSRuntime JS
 
 <div class="rd-reader">
     <button type="button" class="tool back-btn" @onclick="OnBack">
@@ -134,7 +135,46 @@
                             <span class="rd-tense-n">@($"{Math.Max(1, n)} verb{(Math.Max(1, n) == 1 ? "" : "s")}")</span>
                             <span class="rd-tense-pct">@($"you: {pct}%")</span>
                         </div>
-                        <div class="rd-tense-ex" lang="es">@(string.Join(", ", use.Examples))</div>
+                        @* Tap a form: its sentence opens here, and every verb in this tense is marked in the text. *@
+                        <div class="rd-tense-ex" lang="es">
+                            @foreach (var ex in use.Examples)
+                            {
+                                var e = ex;
+                                var on = exTense == t && exToken == e.Token;
+                                <button type="button" class="rd-ex @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")"
+                                        aria-label="@($"{e.Text}: show the sentence")" @onclick="() => ShowExample(t, e.Token)">@e.Text</button>
+                            }
+                        </div>
+                        @if (exTense == t && exToken is { } et && et < a.Tokens.Count)
+                        {
+                            <div class="rd-ex-box">
+                                <p class="rd-ex-sentence" lang="es">
+                                    @foreach (var part in SentenceParts(a, et))
+                                    {
+                                        if (part.Hit)
+                                        {
+                                            <mark class="rd-ex-hit">@part.Text</mark>
+                                        }
+                                        else
+                                        {
+                                            @part.Text
+                                        }
+                                    }
+                                </p>
+                                @if (a.Tokens[et].Readings.Count > 0)
+                                {
+                                    <div class="rd-ex-what">@ReadingText(a.Tokens[et])</div>
+                                }
+                                <div class="rd-tense-actions">
+                                    <button type="button" class="tool small" @onclick="() => JumpTo(et)">See it in the text</button>
+                                    @if (CanSpeak && Speak is not null)
+                                    {
+                                        <button type="button" class="tool small" @onclick="() => Speak!(SentenceText(a, et))">Say the sentence</button>
+                                    }
+                                </div>
+                                <div class="rd-ex-note">@($"Every {info.Name.ToLowerInvariant()} verb is marked in the text.")</div>
+                            </div>
+                        }
                         @if (pct < LearnBelow)
                         {
                             <div class="rd-tense-tip">@($"Learn the {info.Name.ToLowerInvariant()} to read these. It means \"{info.English}\".")</div>
@@ -155,6 +195,13 @@
             <div class="rd-key" aria-hidden="true">
                 <span class="rd-w k">known</span> <span class="rd-w l">learning</span> <span class="rd-w n">new</span> <span class="rd-w d">not in your list</span>
             </div>
+            @if (exTense is { } mt)
+            {
+                <div class="rd-tn-note">
+                    <span><span class="rd-w tn">@VerbGrammar.TenseById[mt].Name.ToLowerInvariant()</span> verbs are marked</span>
+                    <button type="button" class="tool small" @onclick="() => { exTense = null; exToken = null; }">Clear</button>
+                </div>
+            }
             @if (selected is { } s && s < a.Tokens.Count && a.Tokens[s].Unit is { } su)
             {
                 @Info(a, a.Tokens[s], su)
@@ -170,7 +217,7 @@
                     }
                     else
                     {
-                        <span class="rd-w @Cls(tok) @(IsSelected(a, idx) ? "sel" : "")" @onclick="() => Select(a, idx)">@tok.Text</span>
+                        <span id="@($"rd-t-{idx}")" class="rd-w @Cls(tok) @(IsSelected(a, idx) ? "sel" : "") @(InOpenTense(a, idx) ? "tn" : "")" @onclick="() => Select(a, idx)">@tok.Text</span>
                     }
                 }
             </div>
@@ -211,6 +258,11 @@
     private readonly HashSet<string> chosen = new();
     private readonly HashSet<string> unticked = new();
     private bool showMore, confirmDelete;
+    // "Verbs in this text": the tense whose example is open, the example's token, and where to scroll next.
+    private string? exTense;
+    private int? exToken;
+    private HashSet<int> openStarts = new();
+    private int? scrollTo;
     private int added;
     private string ownMeaning = "";
 
@@ -219,6 +271,7 @@
     private void Analyse()
     {
         A = TextAnalysis.Analyse(Text.Text, Words, StateOf, Book, Dict, Text.Study.ToHashSet());
+        openStartsFor = null;
         // Every suggested word starts ticked (unless you unticked it).
         chosen.Clear();
         foreach (var u in A.Suggested.Concat(A.ToLearn))
@@ -259,6 +312,101 @@
     }
 
     private bool IsSelected(TextAnalysis a, int i) => selected is { } s && StartOf(a, i) == s;
+
+    // ------------------------------------------------------------------ verb examples in the text
+
+    private void ShowExample(string tense, int token)
+    {
+        if (exTense == tense && exToken == token)
+        {
+            exTense = null;
+            exToken = null;
+            return;
+        }
+        exTense = tense;
+        exToken = token;
+    }
+
+    /// <summary>The verb forms of the open tense are marked in the text (all the words of a phrase like "he comido").</summary>
+    private bool InOpenTense(TextAnalysis a, int i)
+    {
+        if (exTense is null) return false;
+        if (openStartsFor != exTense)
+        {
+            openStarts = a.Tenses.FirstOrDefault(u => u.Tense == exTense)?.Tokens.ToHashSet() ?? new();
+            openStartsFor = exTense;
+        }
+        return openStarts.Contains(a.Tokens[i].Continues ? StartOf(a, i) : i);
+    }
+    private string? openStartsFor;
+
+    /// <summary>The last word of the phrase that starts at a token (he comido: comido).</summary>
+    private static int PhraseEnd(TextAnalysis a, int start)
+    {
+        var end = start;
+        for (var j = start + 1; j < a.Tokens.Count; j++)
+        {
+            if (!a.Tokens[j].IsWord) continue;
+            if (!a.Tokens[j].Continues) break;
+            end = j;
+        }
+        return end;
+    }
+
+    private static readonly char[] Ends = ['.', '!', '?', '…', '\n'];
+    private static readonly char[] Openers = ['¿', '¡', '«', '"', '“', '(', '\'', '‘', '—', '-'];
+
+    /// <summary>The sentence a token is in, as pieces, with the verb form marked.</summary>
+    private static List<(string Text, bool Hit)> SentenceParts(TextAnalysis a, int start)
+    {
+        var parts = new List<(string Text, bool Hit)>();
+        var sentence = a.Tokens[start].Sentence;
+        var end = PhraseEnd(a, start);
+        var first = start;
+        while (first > 0 && a.Tokens[first - 1].Sentence == sentence) first--;
+        // An opening ¿ or ¡ sits in the gap that ended the sentence before.
+        if (first > 0 && !a.Tokens[first - 1].IsWord)
+        {
+            var gap = a.Tokens[first - 1].Text;
+            var cut = gap.LastIndexOfAny(Ends);
+            var lead = (cut >= 0 ? gap[(cut + 1)..] : gap).Trim();
+            if (lead.Length > 0) parts.Add((lead, false));
+        }
+        for (var i = first; i < a.Tokens.Count && a.Tokens[i].Sentence == sentence; i++)
+        {
+            var text = a.Tokens[i].Text;
+            if (!a.Tokens[i].IsWord)
+            {
+                text = text.Replace('\n', ' ');
+                // The gap that ends the sentence may already hold the next one's ¿ or ¡.
+                if (i + 1 >= a.Tokens.Count || a.Tokens[i + 1].Sentence != sentence) text = text.TrimEnd().TrimEnd(Openers).TrimEnd();
+            }
+            var hit = i >= start && i <= end;
+            if (hit && parts.Count > 0 && parts[^1].Hit) parts[^1] = (parts[^1].Text + text, true);
+            else parts.Add((text, hit));
+        }
+        if (parts.Count > 0) parts[0] = (parts[0].Text.TrimStart(), parts[0].Hit);
+        return parts;
+    }
+
+    private static string SentenceText(TextAnalysis a, int token) => string.Concat(SentenceParts(a, token).Select(p => p.Text));
+
+    private void JumpTo(int token)
+    {
+        selected = token;
+        ownMeaning = "";
+        scrollTo = token;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (scrollTo is { } t)
+        {
+            scrollTo = null;
+            try { await JS.InvokeVoidAsync("palabras.scrollToId", $"rd-t-{t}"); }
+            catch (JSException) { /* scrolling is a nicety */ }
+        }
+    }
 
     private void Select(TextAnalysis a, int i)
     {
@@ -325,6 +473,10 @@
             @if (tok.Readings.Count > 0)
             {
                 <div class="rd-info-sub">@ReadingText(tok)</div>
+            }
+            @if (tok.Note is { } note)
+            {
+                <div class="rd-info-sub">@note</div>
             }
             <div class="rd-info-sub">@StatusText(u)</div>
             <div class="rd-info-actions">

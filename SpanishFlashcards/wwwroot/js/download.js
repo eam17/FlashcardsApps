@@ -73,6 +73,12 @@ window.palabras = {
         u.rate = slow ? 0.7 : 0.95;
         synth.speak(u);
         return true;
+    },
+
+    // Scrolls an element into the middle of its scroll area (Read tab: "See it in the text").
+    scrollToId: function (id) {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 };
 
