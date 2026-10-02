@@ -60,6 +60,18 @@ Upload the contents of `bin/Release/net10.0/publish/wwwroot` to any static host 
   - *Boss battle*: pick one of 15 tough verbs and the tenses. Boss has 12 health, you have 3 hearts; a right answer hits once (twice on a streak of 3+), a wrong one costs a heart. Beaten bosses get a crown (`boss-<verb>` in GameBests); the card shows how many you've beaten.
   - To add a game: put its component in `Components/Games/`, list it in `GamesHub.razor`; `GameKit.cs` has the shared word picker and timer.
 
+## Read tab
+
+Paste any Spanish text (up to 20,000 characters) and see how much of it you can read.
+
+- **Coverage:** the share of words you know (learned) or are learning, as a bar (known / learning / new). Names (a capital letter mid-sentence) and words found nowhere don't count.
+- **Words to learn first:** the fewest new words that take you to 95%, most useful first (most often in the text, then most common in Spanish), each with its meaning and how often it appears. Tick or untick, then *Study these N words*: words from the app's list are added to the text's study list; words outside it become your own cards (topic *My words*) with the sentence from your text as the example. Each text with words to study gets its own group in the Cards picker (*From your texts*), and *Practise this text's words* opens it. *Other new words* lists the rest.
+- **Verbs in this text:** which tenses the text uses (verbs from the Verbs tab, regular forms of other verbs worked out from the endings, and *haber* + participle), with your strength in each tense. Below 40%: *Learn the preterite to read these*, with buttons for its Rules and for Decode practice on that tense.
+- **The text:** every word marked (known plain, learning shaded, new underlined, outside the list dotted, picked to study double-underlined). Tap a word (or phrase: *por favor*, *he comido*, *me llamo*) for its headword, meaning, verb reading (*fue*: ser or ir, preterite, él), and *Study it*, *I know it*, *Add to my words*, your own meaning for words the dictionary doesn't have, or *Look it up* (SpanishDict).
+- **Matching:** the word list first (with phrases up to four words, *del*/*al*), then verb forms from the Verbs tab (also two- and three-word ones), then the dictionary (forms → headword), then feminine/plural guesses (*tanta* → *tanto*), then pronouns taken off the end (*dámelo*).
+- **Dictionary:** `wwwroot/data/dict.tsv` (about 2 MB, loaded the first time you open a text), made by `tools/dictionary/build_dict.py` from Wiktionary data (CC BY-SA, credit shown in the app; see `wwwroot/data/dict-LICENSE.txt`).
+- Texts (`Texts`) and your own words (`MyWords`) are saved with your progress and included in Export JSON / Import. Code: `Models/Reading/` (analysis, dictionary, saved texts), `Components/Read/` (screens), `Services/DictionaryRepository.cs`.
+
 ## Verbs tab
 
 Conjugation practice, separate from the word cards. It covers every verb in `words.json` (222 verbs).

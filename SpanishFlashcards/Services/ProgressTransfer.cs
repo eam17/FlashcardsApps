@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using SpanishFlashcards.Models;
+using SpanishFlashcards.Models.Reading;
 using SpanishFlashcards.Models.Verbs;
 
 namespace SpanishFlashcards.Services;
@@ -27,6 +28,12 @@ public sealed class ProgressExport
 
     /// <summary>Verbs tab: latest test result per tree item (score 0 to 100, passed = 90 or more).</summary>
     public Dictionary<string, ExportVerbTest>? VerbTests { get; set; }
+
+    /// <summary>Read tab: your texts and the words picked to study for each.</summary>
+    public List<SavedText>? Texts { get; set; }
+
+    /// <summary>Words you added from texts (cards outside the word list). Their progress is in Schedule.</summary>
+    public List<MyWord>? MyWords { get; set; }
 }
 
 public sealed class ExportVerbTest
@@ -78,9 +85,12 @@ public static class ProgressTransfer
 
     public static string ToJson(IEnumerable<Word> words, IReadOnlyDictionary<string, CardState> cards,
                                 IReadOnlyDictionary<string, VerbSkill>? verbSkills = null,
-                                IReadOnlyDictionary<string, VerbTestRecord>? verbTests = null)
+                                IReadOnlyDictionary<string, VerbTestRecord>? verbTests = null,
+                                List<SavedText>? texts = null, List<MyWord>? myWords = null)
     {
         var export = new ProgressExport { Schedule = new() };
+        if (texts is { Count: > 0 }) export.Texts = texts;
+        if (myWords is { Count: > 0 }) export.MyWords = myWords;
         if (verbTests is { Count: > 0 })
         {
             export.VerbTests = verbTests
@@ -142,6 +152,26 @@ public static class ProgressTransfer
             : value;
 
     // ---------- import ----------
+
+    /// <summary>
+    /// The Read tab's texts and your own words from a JSON export (null for CSV files or older exports).
+    /// Read these first: your own words have to exist before their card progress can be matched.
+    /// </summary>
+    public static (List<SavedText>? Texts, List<MyWord>? MyWords) ReadReading(string text, string fileName)
+    {
+        text = text.TrimStart('\uFEFF').Trim();
+        var looksJson = text.StartsWith('{') || fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+        if (!looksJson) return (null, null);
+        try
+        {
+            var data = JsonSerializer.Deserialize<ProgressExport>(text, JsonOptions);
+            return (data?.Texts, data?.MyWords);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
+    }
 
     /// <summary>Reads a file made by Export JSON or Export CSV (or a similar CSV you edited yourself).</summary>
     public static ImportResult Import(string text, string fileName, IEnumerable<Word> words)

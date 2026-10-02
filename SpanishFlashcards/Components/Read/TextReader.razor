@@ -1,0 +1,448 @@
+@* One text in the Read tab: how much you can read, the words to learn first, the verb tenses it uses,
+   and the text itself (tap any word). *@
+
+<div class="rd-reader">
+    <button type="button" class="tool back-btn" @onclick="OnBack">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        Your texts
+    </button>
+
+    <div class="rd-title-row">
+        <h2 class="rd-title" lang="es">@Text.Title</h2>
+        @if (confirmDelete)
+        {
+            <span class="rd-confirm">
+                <button type="button" class="tool small danger" @onclick="OnDelete">Delete</button>
+                <button type="button" class="tool small" @onclick="() => confirmDelete = false">Keep</button>
+            </span>
+        }
+        else
+        {
+            <button type="button" class="tool small" aria-label="Delete this text" @onclick="() => confirmDelete = true">Delete</button>
+        }
+    </div>
+
+    @if (Dict is null)
+    {
+        <p class="list-hint">@(DictError ?? "Loading the dictionary (about 2 MB, only the first time)…")</p>
+    }
+
+    @if (A is { } a)
+    {
+        var known = Pct(a.KnownShare);
+        var learning = Pct(a.LearningShare);
+        @* On a wide screen: the text on the left (rd-main), what to learn on the right (rd-side). On a phone
+           these wrappers don't change anything (display: contents). *@
+        <div class="rd-body">
+        <div class="rd-side">
+        <section class="rd-card rd-cover" aria-label="How much you can read">
+            <div class="rd-big">@($"{Pct(a.CoveredShare)}%")<span> of the words you know or are learning</span></div>
+            <div class="rd-bar" aria-hidden="true">
+                <span class="rd-bar-known" style="width: @(known)%"></span><span class="rd-bar-learning" style="width: @(learning)%"></span>
+            </div>
+            <div class="rd-legend">
+                <span><i class="rd-dot k"></i>@($"Known {known}%")</span>
+                <span><i class="rd-dot l"></i>@($"Learning {learning}%")</span>
+                <span><i class="rd-dot n"></i>@($"New {Math.Max(0, 100 - known - learning)}%")</span>
+            </div>
+            @if (a.Countable == 0)
+            {
+                <p class="list-hint">No Spanish words found in this text.</p>
+            }
+            else if (a.CoveredShare >= TextAnalysis.Target)
+            {
+                <p class="rd-goal">You can read this! Tap any word you're unsure of.</p>
+            }
+            else if (a.Suggested.Count > 0)
+            {
+                <p class="rd-goal">@($"Learn these {a.Suggested.Count} words to understand {Pct(a.AfterSuggested)}% of it.")</p>
+            }
+        </section>
+
+        @if (a.Suggested.Count > 0 && a.CoveredShare < TextAnalysis.Target)
+        {
+            <section class="rd-card" aria-label="Words to learn">
+                <h3 class="rd-h3">Words to learn first</h3>
+                <div class="rd-words">
+                    @foreach (var u in a.Suggested)
+                    {
+                        @WordRow(u)
+                    }
+                </div>
+                @if (added > 0)
+                {
+                    <div class="game-feedback ok" role="status">
+                        <span class="fb-icon" aria-hidden="true">✓</span>
+                        <span class="fb-word">@($"Added {added} word{(added == 1 ? "" : "s")} to study for this text.")</span>
+                    </div>
+                }
+                @{ var toAdd = a.Suggested.Where(u => chosen.Contains(u.Key) && !u.InStudy).ToList(); }
+                @if (toAdd.Count > 0)
+                {
+                    <button type="button" class="primary wide" @onclick="() => StudyAll(toAdd)">@($"Study these {toAdd.Count} words")</button>
+                }
+                @if (Text.Study.Count > 0)
+                {
+                    <button type="button" class="tool rd-study-now" @onclick="StudyNow">@($"Practise this text's words now ({Text.Study.Count})")</button>
+                }
+                @{ var more = a.ToLearn.Skip(a.Suggested.Count).ToList(); }
+                @if (more.Count > 0)
+                {
+                    <button type="button" class="vb-weak-head rd-more-head" aria-expanded="@(showMore ? "true" : "false")" @onclick="() => showMore = !showMore">
+                        <span class="vb-persons-heading">@($"Other new words ({more.Count})")</span>
+                        <span class="vb-weak-chevron" aria-hidden="true"></span>
+                    </button>
+                    @if (showMore)
+                    {
+                        <div class="rd-words">
+                            @foreach (var u in more)
+                            {
+                                @WordRow(u)
+                            }
+                        </div>
+                    }
+                }
+            </section>
+        }
+        else if (Text.Study.Count > 0)
+        {
+            <button type="button" class="tool rd-study-now" @onclick="StudyNow">@($"Practise this text's words ({Text.Study.Count})")</button>
+        }
+
+        <section class="rd-card" aria-label="Verbs in this text">
+            <h3 class="rd-h3">Verbs in this text</h3>
+            @if (Book is null || Tree is null)
+            {
+                <p class="list-hint">Loading the verbs…</p>
+            }
+            else if (a.Tenses.Count == 0)
+            {
+                <p class="list-hint">No verbs from the Verbs tab found here.</p>
+            }
+            else
+            {
+                <p class="list-hint">Which tenses this text uses, and how well you know them.</p>
+                @foreach (var use in a.Tenses.Take(6))
+                {
+                    var t = use.Tense;
+                    var info = VerbGrammar.TenseById[t];
+                    var pct = TensePercent(t);
+                    var n = (int)Math.Round(use.Count);
+                    <div class="rd-tense @(pct < LearnBelow ? "todo" : "ok")">
+                        <div class="rd-tense-top">
+                            <span class="rd-tense-name">@info.Name</span>
+                            <span class="rd-tense-n">@($"{Math.Max(1, n)} verb{(Math.Max(1, n) == 1 ? "" : "s")}")</span>
+                            <span class="rd-tense-pct">@($"you: {pct}%")</span>
+                        </div>
+                        <div class="rd-tense-ex" lang="es">@(string.Join(", ", use.Examples))</div>
+                        @if (pct < LearnBelow)
+                        {
+                            <div class="rd-tense-tip">@($"Learn the {info.Name.ToLowerInvariant()} to read these. It means \"{info.English}\".")</div>
+                            <div class="rd-tense-actions">
+                                <button type="button" class="tool small" @onclick="() => OpenTense(t)">Rules</button>
+                                <button type="button" class="tool small" @onclick="() => DecodeTense(t)">Practise reading it</button>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </section>
+        </div>
+
+        <div class="rd-main">
+        <section class="rd-card rd-text-card" aria-label="The text">
+            <h3 class="rd-h3">The text</h3>
+            <div class="rd-key" aria-hidden="true">
+                <span class="rd-w k">known</span> <span class="rd-w l">learning</span> <span class="rd-w n">new</span> <span class="rd-w d">not in your list</span>
+            </div>
+            @if (selected is { } s && s < a.Tokens.Count && a.Tokens[s].Unit is { } su)
+            {
+                @Info(a, a.Tokens[s], su)
+            }
+            <div class="rd-text" lang="es">
+                @for (var i = 0; i < a.Tokens.Count; i++)
+                {
+                    var idx = i;
+                    var tok = a.Tokens[i];
+                    if (!tok.IsWord)
+                    {
+                        @tok.Text
+                    }
+                    else
+                    {
+                        <span class="rd-w @Cls(tok) @(IsSelected(a, idx) ? "sel" : "")" @onclick="() => Select(a, idx)">@tok.Text</span>
+                    }
+                }
+            </div>
+            @if (Text.Study.Count > 0 || a.Units.Values.Any(u => u.InStudy))
+            {
+                <p class="list-hint">Words you picked to study are underlined twice.</p>
+            }
+        </section>
+
+        <p class="rd-credit">Meanings of words outside the app's list come from <a href="https://en.wiktionary.org" target="_blank" rel="noopener">Wiktionary</a> (CC BY-SA), via the <a href="https://github.com/doozan/spanish_data" target="_blank" rel="noopener">spanish_data</a> project.</p>
+        </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SavedText Text { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<Word> Words { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public SpanishDictionary? Dict { get; set; }
+    [Parameter] public string? DictError { get; set; }
+    [Parameter] public VerbBook? Book { get; set; }
+    [Parameter] public VerbNode? Tree { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback<string> OnStudy { get; set; }
+    [Parameter] public EventCallback OnShowVerbs { get; set; }
+
+    /// <summary>Below this (strength in the Verbs tab) a tense is suggested to learn.</summary>
+    private const int LearnBelow = 40;
+
+    private TextAnalysis? A;
+    private int? selected;
+    private readonly HashSet<string> chosen = new();
+    private readonly HashSet<string> unticked = new();
+    private bool showMore, confirmDelete;
+    private int added;
+    private string ownMeaning = "";
+
+    protected override void OnParametersSet() => Analyse();
+
+    private void Analyse()
+    {
+        A = TextAnalysis.Analyse(Text.Text, Words, StateOf, Book, Dict, Text.Study.ToHashSet());
+        // Every suggested word starts ticked (unless you unticked it).
+        chosen.Clear();
+        foreach (var u in A.Suggested.Concat(A.ToLearn))
+            if (!unticked.Contains(u.Key)) chosen.Add(u.Key);
+    }
+
+    private static int Pct(double share) => (int)Math.Round(share * 100);
+
+    private int TensePercent(string tense)
+    {
+        var node = Tree?.Children.FirstOrDefault(n => n.Tense == tense);
+        return node is null ? 0 : VerbTree.Stats(node, Progress.VerbSkills, DateTime.UtcNow).Percent;
+    }
+
+    private static string Cls(ReadToken t)
+    {
+        if (t.IsName || t.Unit is null) return "nm";
+        var c = t.Unit.Status switch
+        {
+            ReadStatus.Known => "k",
+            ReadStatus.Learning => "l",
+            ReadStatus.New => "n",
+            ReadStatus.NotInList => "d",
+            _ => "u",
+        };
+        return t.Unit.InStudy ? c + " pk" : c;
+    }
+
+    /// <summary>The first word of the phrase a token belongs to.</summary>
+    private static int StartOf(TextAnalysis a, int i)
+    {
+        while (i > 0 && a.Tokens[i].Continues)
+        {
+            i--;
+            while (i > 0 && !a.Tokens[i].IsWord) i--;
+        }
+        return i;
+    }
+
+    private bool IsSelected(TextAnalysis a, int i) => selected is { } s && StartOf(a, i) == s;
+
+    private void Select(TextAnalysis a, int i)
+    {
+        if (a.Tokens[i].IsName) return;
+        var start = StartOf(a, i);
+        selected = selected == start ? null : start;
+        ownMeaning = "";
+    }
+
+    // ------------------------------------------------------------------ word rows and the info box
+
+    private RenderFragment WordRow(ReadUnit u) =>
+        @<label class="rd-word @(u.InStudy ? "studying" : "")">
+            @if (u.InStudy)
+            {
+                <span class="rd-check" aria-hidden="true">✓</span>
+            }
+            else
+            {
+                <input type="checkbox" checked="@(chosen.Contains(u.Key))" @onchange="e => Tick(u, e)" />
+            }
+            <span class="rd-word-text">
+                <span class="rd-word-es" lang="es">@u.Head</span>
+                <span class="rd-word-en">@(u.Meaning.Length > 0 ? u.Meaning : "no meaning found")</span>
+            </span>
+            <span class="rd-word-side">
+                <span class="rd-word-n">@($"×{u.Count}")</span>
+                @if (u.InStudy)
+                {
+                    <span class="badge known">studying</span>
+                }
+                else if (u.Status == ReadStatus.NotInList)
+                {
+                    <span class="badge new">new to the app</span>
+                }
+            </span>
+        </label>;
+
+    private void Tick(ReadUnit u, ChangeEventArgs e)
+    {
+        if (e.Value is true) { chosen.Add(u.Key); unticked.Remove(u.Key); }
+        else { chosen.Remove(u.Key); unticked.Add(u.Key); }
+    }
+
+    private RenderFragment Info(TextAnalysis a, ReadToken tok, ReadUnit u) =>
+        @<div class="rd-info" role="status">
+            <div class="rd-info-top">
+                <strong lang="es">@tok.Phrase</strong>
+                @if (!string.Equals(tok.Phrase, u.Head, StringComparison.OrdinalIgnoreCase))
+                {
+                    <span> → </span><strong lang="es">@u.Head</strong>
+                }
+                @if (u.Meaning.Length > 0)
+                {
+                    <span class="rd-info-en">@u.Meaning</span>
+                }
+                @if (CanSpeak && Speak is not null)
+                {
+                    <button type="button" class="st-say" aria-label="Say it" title="Say it" @onclick="() => Speak!(tok.Phrase)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></svg>
+                    </button>
+                }
+            </div>
+            @if (tok.Readings.Count > 0)
+            {
+                <div class="rd-info-sub">@ReadingText(tok)</div>
+            }
+            <div class="rd-info-sub">@StatusText(u)</div>
+            <div class="rd-info-actions">
+                @switch (u.Status)
+                {
+                    case ReadStatus.New:
+                    case ReadStatus.Learning:
+                        if (u.Word is not null)
+                        {
+                            <button type="button" class="tool small" @onclick="() => ToggleStudy(u)">@(u.InStudy ? "Don't study it here" : "Study it")</button>
+                            if (u.Status == ReadStatus.New)
+                            {
+                                <button type="button" class="tool small" @onclick="() => MarkKnown(u)">I know it</button>
+                            }
+                        }
+                        break;
+                    case ReadStatus.NotInList:
+                        <button type="button" class="tool small" @onclick="() => StudyAll(new[] { u })">Add to my words</button>
+                        <button type="button" class="tool small" @onclick="() => MarkKnown(u)">I know it</button>
+                        break;
+                    case ReadStatus.Unknown:
+                        <input class="rd-own" type="text" maxlength="80" placeholder="Meaning" @bind="ownMeaning" aria-label="Your meaning" />
+                        <button type="button" class="tool small" disabled="@(string.IsNullOrWhiteSpace(ownMeaning))" @onclick="() => AddOwn(u)">Add</button>
+                        break;
+                }
+                <a class="tool small rd-look" href="@($"https://www.spanishdict.com/translate/{Uri.EscapeDataString(u.Head)}")" target="_blank" rel="noopener">Look it up ↗</a>
+            </div>
+        </div>;
+
+    private static string ReadingText(ReadToken tok) => string.Join(" or ",
+        tok.Readings.GroupBy(r => (r.Inf, r.Tense))
+            .Select(g => $"{g.Key.Inf}, {VerbGrammar.TenseById[g.Key.Tense].Name.ToLowerInvariant()}, " +
+                         string.Join(" / ", g.Select(r => VerbGameKit.WhoShort(VerbGrammar.PersonsFor(r.Tense)[r.Person].Group)).Distinct())));
+
+    private static string StatusText(ReadUnit u) => u.Status switch
+    {
+        ReadStatus.Known => "You know this word.",
+        ReadStatus.Learning => u.InStudy ? "You're learning it (picked for this text)." : "You're learning it.",
+        ReadStatus.New => u.InStudy ? "New. Picked to study for this text." : "In the app's word list, not started yet.",
+        ReadStatus.NotInList => "Not in the app's list yet: add it to make a card.",
+        _ => "Not in the dictionary. Look it up and add your own meaning.",
+    };
+
+    // ------------------------------------------------------------------ actions
+
+    /// <summary>Picks words to study for this text. Words outside the list become your own cards first.</summary>
+    private async Task StudyAll(IReadOnlyList<ReadUnit> units)
+    {
+        var a = A!;
+        var count = 0;
+        foreach (var u in units)
+        {
+            var id = u.Word?.Es ?? AddMyWord(a, u, null);
+            if (id is null) continue;
+            if (!Text.Study.Contains(id)) { Text.Study.Add(id); count++; }
+        }
+        added = count;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ToggleStudy(ReadUnit u)
+    {
+        if (u.Word is null) return;
+        if (!Text.Study.Remove(u.Word.Es)) Text.Study.Add(u.Word.Es);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task MarkKnown(ReadUnit u)
+    {
+        var id = u.Word?.Es ?? AddMyWord(A!, u, null);
+        if (id is null) return;
+        Progress.Cards[id] = Srs.MarkLearned(Srs.Today);
+        Text.Study.Remove(id);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task AddOwn(ReadUnit u)
+    {
+        var id = AddMyWord(A!, u, ownMeaning.Trim());
+        ownMeaning = "";
+        if (id is not null && !Text.Study.Contains(id)) Text.Study.Add(id);
+        await OnChanged.InvokeAsync();
+    }
+
+    /// <summary>Makes a card for a word outside the list (from the dictionary, or with your meaning). Returns its id.</summary>
+    private string? AddMyWord(TextAnalysis a, ReadUnit u, string? meaning)
+    {
+        var e = u.Entry;
+        var es = e?.Lemma ?? u.Head;
+        if (Progress.MyWords.Any(w => w.Es == es)) return es;
+        var en = meaning ?? e?.Meaning ?? "";
+        if (en.Length == 0) return null;
+        Progress.MyWords.Add(new MyWord
+        {
+            Es = es,
+            En = en,
+            Pos = e?.PosName ?? "other",
+            Gender = e?.Gender is "m" or "f" ? e.Gender : null,
+            Example = u.First >= 0 ? a.SentenceOf(u.First) : "",
+            Form = u.First >= 0 ? a.Tokens[u.First].Text : null,
+            TextId = Text.Id,
+        });
+        return es;
+    }
+
+    private Task StudyNow() => OnStudy.InvokeAsync("text:" + Text.Id);
+
+    private async Task OpenTense(string tense)
+    {
+        VerbsHub.ShowTense(tense, rules: true);
+        await OnShowVerbs.InvokeAsync();
+    }
+
+    private async Task DecodeTense(string tense)
+    {
+        DecodeView.Focus(Progress, new[] { tense });
+        VerbsHub.ShowDecode();
+        await OnChanged.InvokeAsync();
+        await OnShowVerbs.InvokeAsync();
+    }
+}

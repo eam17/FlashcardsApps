@@ -1128,3 +1128,197 @@ p.dc-note { margin: 0; }
 .bb-hp-fill { height: 100%; border-radius: 999px; background: #E5484D; transition: width .25s ease; }
 .bb-hearts { flex-shrink: 0; display: flex; gap: 2px; font-size: 22px; color: #E5484D; }
 .bb-heart.lost { color: rgba(255, 255, 255, .25); }
+
+/* ===== Read tab ===== */
+.rd { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 14px; padding: 0 20px 24px; }
+.rd-new, .rd-list, .rd-reader { display: flex; flex-direction: column; gap: 10px; }
+.rd-h { margin: 4px 0 0; font-family: var(--display); font-weight: 800; font-size: 22px; }
+.rd-paste { width: 100%; min-height: 140px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; line-height: 1.5; resize: vertical; }
+.rd-title-input, .rd-own { width: 100%; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; }
+.rd-own { width: auto; flex: 1; min-width: 120px; min-height: 36px; }
+.rd-paste:focus-visible, .rd-title-input:focus-visible, .rd-own:focus-visible { outline: 3px solid #F2B138; outline-offset: 2px; }
+.rd-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.rd-title { margin: 0; min-width: 0; font-family: var(--display); font-weight: 800; font-size: 22px; line-height: 1.15; overflow-wrap: anywhere; }
+.rd-confirm { display: flex; gap: 6px; flex-shrink: 0; }
+.tool.danger { border-color: #B42318; color: #B42318; }
+
+.rd-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
+.rd-h3 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 17px; }
+.rd-big { font-family: var(--display); font-weight: 800; font-size: 34px; line-height: 1; color: var(--accent-ink); }
+.rd-big span { font-family: var(--body); font-weight: 500; font-size: 14px; color: var(--muted); margin-left: 6px; }
+.rd-bar { display: flex; height: 10px; border-radius: 999px; background: var(--chip-idle); overflow: hidden; }
+.rd-bar-known { background: var(--accent); }
+.rd-bar-learning { background: #8FA5F0; }
+.rd-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.rd-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.rd-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.rd-dot.k { background: var(--accent); }
+.rd-dot.l { background: #8FA5F0; }
+.rd-dot.n { background: var(--chip-idle); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.rd-goal { margin: 2px 0 0; font-weight: 700; }
+
+.rd-words { display: flex; flex-direction: column; }
+.rd-word { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--chip-idle); cursor: pointer; }
+.rd-word:first-child { border-top: none; }
+.rd-word input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
+.rd-check { width: 20px; flex-shrink: 0; text-align: center; color: #1E7A46; font-weight: 800; }
+.rd-word-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rd-word-es { font-family: var(--display); font-weight: 700; font-size: 17px; }
+.rd-word-en { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.rd-word-side { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.rd-word-n { font-size: 12px; font-weight: 700; color: var(--muted); }
+.rd-study-now { width: 100%; min-height: 44px; }
+.rd-more-head { margin-top: 4px; }
+.rd-more-head .vb-weak-chevron { border-color: var(--muted); }
+.rd-more-head[aria-expanded="true"] .vb-weak-chevron { transform: rotate(-135deg); margin-top: 4px; }
+
+.rd-tense { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: 12px; background: var(--ground); border-left: 4px solid var(--line-strong); }
+.rd-tense.todo { border-left-color: #E0A100; }
+.rd-tense.ok { border-left-color: #1E7A46; }
+.rd-tense-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rd-tense-name { font-family: var(--display); font-weight: 700; font-size: 16px; }
+.rd-tense-n { font-size: 13px; color: var(--muted); }
+.rd-tense-pct { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); }
+.rd-tense-ex { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.rd-tense-tip { font-size: 13px; font-weight: 700; }
+.rd-tense-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+
+.rd-key { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.rd-text { font-size: 18px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rd-w { border-radius: 4px; cursor: pointer; padding: 0 1px; }
+.rd-w.l { background: #E8EDFD; }
+.rd-w.n { border-bottom: 2px solid var(--accent); }
+.rd-w.d { border-bottom: 2px dotted #B45309; }
+.rd-w.u { border-bottom: 2px dotted var(--line-strong); color: var(--muted); }
+.rd-w.nm { cursor: default; }
+.rd-w.pk { border-bottom: 3px double #1E7A46; }
+.rd-w.sel { background: var(--accent-soft); outline: 2px solid var(--accent); }
+.rd-info { position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 15px; box-shadow: 0 2px 8px rgba(21, 26, 46, .12); }
+.rd-info-top { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; }
+.rd-info-top .st-say { margin-left: auto; }
+.rd-info-en { color: var(--ink); }
+.rd-info-sub { font-size: 13px; color: var(--muted); }
+.rd-info-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.rd-look { display: inline-flex; align-items: center; text-decoration: none; }
+.rd-credit { margin: 0; font-size: 12px; color: var(--muted); }
+.rd-credit a { color: inherit; }
+
+/* ===== Desktop: more room on a computer screen =====
+   Everything below only applies to wide windows (900px and up), so phones look exactly the same.
+   The tab bar becomes a side bar, and the screens get wider with more breathing room. */
+.rd-body, .rd-side, .rd-main { display: contents; }
+
+@media (min-width: 900px) {
+    /* the shell: side bar on the left, the screen on the right */
+    .app {
+        --side-w: 232px;
+        /* side padding that keeps the content about 1000px wide and centred */
+        --pad: max(40px, calc((100% - 1000px) / 2));
+        max-width: none;
+        display: grid;
+        grid-template-columns: var(--side-w) minmax(0, 1fr);
+        grid-template-rows: auto auto auto minmax(0, 1fr);
+        border: none;
+    }
+    .app > .top { grid-column: 2; grid-row: 1; }
+    .app > .group-picker { grid-column: 2; grid-row: 2; }
+    .app > .group-progress { grid-column: 2; grid-row: 3; }
+    .app > .content { grid-column: 2; grid-row: 4; }
+
+    .tabbar {
+        grid-column: 1;
+        grid-row: 1 / -1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 28px 14px;
+        border-top: none;
+        border-right: 1px solid var(--line);
+    }
+    .tabbar::before {
+        content: "Palabras";
+        padding: 0 12px 22px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 26px;
+        letter-spacing: -.02em;
+        color: var(--accent);
+    }
+    .tab { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 48px; padding: 8px 12px; border-radius: 12px; font-size: 15px; }
+    .tab-pill { display: contents; }
+    .tab-count { position: static; order: 2; margin-left: auto; }
+    .tab.on { background: var(--accent-soft); color: var(--accent-ink); }
+
+    /* header and word-group picker */
+    .top { padding: 32px var(--pad) 14px; gap: 12px; }
+    h1 { font-size: 32px; }
+    .score-num { font-size: 24px; }
+    .score-of { font-size: 14px; }
+    .progress { height: 8px; }
+    .group-picker { padding: 0 var(--pad); gap: 8px; }
+    .group-select { flex: 0 1 420px; min-height: 44px; font-size: 15px; }
+    .group-picker .tool.icon { width: 44px; height: 44px; }
+    .group-progress { padding: 8px var(--pad) 12px; font-size: 14px; }
+
+    /* screens: wider, with more space around */
+    .list-screen, .settings, .games, .verbs, .rd { padding: 8px var(--pad) 40px; gap: 16px; }
+    .list-hint { font-size: 14px; }
+    .row { padding: 12px 18px; }
+
+    /* Cards: a bigger card in the middle, answers underneath */
+    .status-row { width: 100%; max-width: 760px; margin: 0 auto; padding: 8px 20px; font-size: 14px; }
+    .study { width: 100%; max-width: 760px; margin: 0 auto; padding: 0 20px 32px; gap: 12px; justify-content: center; }
+    .card-wrap { flex: 1 1 auto; max-height: 500px; }
+    .card { padding: 24px 32px 28px; gap: 12px; border-radius: 28px; }
+    .card-meta { top: 18px; left: 24px; }
+    .speak { top: 12px; right: 12px; }
+    .card-word { font-size: 56px; }
+    .card-word.en { font-size: 46px; }
+    .card-answer { font-size: 26px; }
+    .card-example { font-size: 19px; }
+    .card-sub, .card-hint { font-size: 16px; }
+    .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .choices .choice { min-height: 56px; font-size: 16px; }
+    .choice.es { font-size: 18px; }
+    .act { min-height: 58px; font-size: 16px; }
+    .done { flex: 0 1 auto; width: calc(100% - 40px); max-width: 640px; margin: 48px auto; padding: 48px 32px; }
+
+    /* Settings: two columns of cards */
+    .settings { display: block; columns: 2; column-gap: 16px; }
+    .set-card { break-inside: avoid; margin-bottom: 16px; padding: 18px 20px; }
+
+    /* Games: the game list in two columns; a game itself stays a comfortable size */
+    .games-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .games-section > .games-heading, .games-section > .list-hint { grid-column: 1 / -1; }
+    .games-section + .games-section { margin-top: 16px; }
+    .game-card { height: 100%; }
+    .games > :not(.games-section):not(.back-btn) { width: 100%; max-width: 680px; margin-inline: auto; }
+    .games > .back-btn { margin-left: max(0px, calc((100% - 680px) / 2)); }
+
+    /* Verbs: practice, tests and Decode stay a comfortable size; lists and rules use the width */
+    .verbs .vp, .verbs .tst, .verbs .dc { width: 100%; max-width: 720px; margin-inline: auto; }
+    .vg-scroll { max-height: calc(100dvh - 260px); }
+    .vg-sheet { left: calc(50% + var(--side-w, 232px) / 2); }
+
+    /* Read: the text on the left, what to learn on the right */
+    .rd-paste { min-height: 220px; }
+    .rd-new, .rd-list { max-width: 760px; }
+    .rd-text { font-size: 20px; line-height: 1.8; }
+}
+
+@media (min-width: 1100px) {
+    .rd-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+    .rd-main, .rd-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .rd-main { grid-column: 1; grid-row: 1; }
+    .rd-side { grid-column: 2; grid-row: 1; }
+    .rd-side .rd-big span { display: block; margin: 6px 0 0; }
+}
+
+/* Mouse pointers: a little feedback on hover (touch screens are unchanged) */
+@media (hover: hover) and (min-width: 900px) {
+    .tab:not(.on):hover { background: var(--ground); color: var(--ink); }
+    .game-card:hover { border-color: var(--accent); box-shadow: 0 4px 14px rgba(21, 26, 46, .10); }
+    button.choice:hover, .race-tile:not(:disabled):hover, .dc-opt:not(:disabled):hover { border-color: var(--accent); }
+    .tool:not(:disabled):hover { border-color: var(--accent); }
+    button.row:hover { background: var(--ground); }
+}

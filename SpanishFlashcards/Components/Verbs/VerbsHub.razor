@@ -283,6 +283,17 @@ else
     private static string? lastNodeId;
     private static View lastView = View.Overview;
 
+    /// <summary>Open a tense next time the Verbs tab shows (from the Read tab): its Rules, or its Overview.</summary>
+    public static void ShowTense(string tense, bool rules)
+    {
+        lastNodeId = $"t:{tense}";
+        lastView = rules ? View.Rules : View.Overview;
+        mode = Mode.Tree;
+    }
+
+    /// <summary>Show Decode next time the Verbs tab shows (set its tenses with DecodeView.Focus first).</summary>
+    public static void ShowDecode() => mode = Mode.Decode;
+
     private VerbBook? book;
     private VerbNode? tree;
     private VerbNode? current;

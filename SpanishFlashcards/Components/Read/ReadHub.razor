@@ -1,0 +1,126 @@
+@* The Read tab: paste a Spanish text, see how much of it you can read, and learn the words (and verb
+   tenses) that unlock the rest. Your texts are kept in a list. The reading itself is TextReader.razor;
+   the analysis is Models/Reading/TextAnalysis.cs. *@
+@inject DictionaryRepository DictRepo
+@inject VerbRepository VerbRepo
+
+<div class="rd">
+    @if (Open is { } text)
+    {
+        <TextReader @key="text.Id" Text="text" Words="Words" StateOf="StateOf" Progress="Progress" Dict="dict" Book="book" Tree="tree"
+                    DictError="dictError" CanSpeak="CanSpeak" Speak="Speak"
+                    OnBack="() => openId = null" OnDelete="() => Delete(text)" OnChanged="OnChanged"
+                    OnStudy="OnStudy" OnShowVerbs="OnShowVerbs" />
+    }
+    else
+    {
+        <section class="rd-new" aria-label="New text">
+            <h2 class="rd-h">Read something</h2>
+            <p class="list-hint">Paste any Spanish text: an article, a message, song lyrics. You'll see how much you can already read, which words to learn first, and which verb tenses it uses.</p>
+            <textarea class="rd-paste" rows="6" maxlength="20000" placeholder="Pega aquí tu texto…" lang="es"
+                      @bind="draft" @bind:event="oninput" aria-label="Spanish text"></textarea>
+            <input class="rd-title-input" type="text" maxlength="80" placeholder="Title (optional)" @bind="draftTitle" aria-label="Title" />
+            <button type="button" class="primary wide" disabled="@(string.IsNullOrWhiteSpace(draft))" @onclick="Add">Read it</button>
+        </section>
+
+        @if (Progress.Texts.Count > 0)
+        {
+            <section class="rd-list" aria-label="Your texts">
+                <h2 class="rd-h">Your texts</h2>
+                <div class="list">
+                    @foreach (var t in Progress.Texts.OrderByDescending(t => t.Added))
+                    {
+                        var x = t;
+                        <button type="button" class="row" @onclick="() => openId = x.Id">
+                            <span class="row-text">
+                                <span class="row-word">@x.Title</span>
+                                <span class="row-sub">@Summary(x)</span>
+                            </span>
+                        </button>
+                    }
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Word> Words { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<Word, CardState?> StateOf { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    /// <summary>Texts or your words changed: save, and rebuild the word list and groups.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Study the words of a text: the group id to open on the Cards tab.</summary>
+    [Parameter] public EventCallback<string> OnStudy { get; set; }
+    /// <summary>Switch to the Verbs tab (already set up with VerbsHub.ShowTense or ShowDecode).</summary>
+    [Parameter] public EventCallback OnShowVerbs { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    // The open text and the half-written new one, kept while the app is open.
+    private static string? openId;
+    private static string draft = "";
+    private static string draftTitle = "";
+
+    private SpanishDictionary? dict;
+    private string? dictError;
+    private VerbBook? book;
+    private VerbNode? tree;
+
+    private SavedText? Open => openId is null ? null : Progress.Texts.FirstOrDefault(t => t.Id == openId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The dictionary and the verbs load side by side; the reader works with whatever has arrived.
+        var dictTask = LoadDict();
+        var verbTask = LoadVerbs();
+        await Task.WhenAll(dictTask, verbTask);
+    }
+
+    private async Task LoadDict()
+    {
+        try { dict = await DictRepo.GetAsync(); }
+        catch (Exception ex) { dictError = $"Couldn't load the dictionary: {ex.Message}"; }
+        StateHasChanged();
+    }
+
+    private async Task LoadVerbs()
+    {
+        try { (book, tree) = await VerbRepo.GetAsync(); }
+        catch (Exception) { /* the reader works without verb details */ }
+        StateHasChanged();
+    }
+
+    private async Task Add()
+    {
+        var text = draft.Trim();
+        if (text.Length == 0) return;
+        var saved = new SavedText { Text = text, Title = string.IsNullOrWhiteSpace(draftTitle) ? TitleFor(text) : draftTitle.Trim() };
+        Progress.Texts.Add(saved);
+        draft = draftTitle = "";
+        openId = saved.Id;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task Delete(SavedText text)
+    {
+        Progress.Texts.Remove(text);
+        openId = null;
+        await OnChanged.InvokeAsync();
+    }
+
+    /// <summary>The first few words, as a title.</summary>
+    private static string TitleFor(string text)
+    {
+        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Take(6).ToList();
+        var title = string.Join(' ', words).TrimEnd('.', ',', ';', ':');
+        return title.Length > 50 ? title[..50].TrimEnd() + "…" : words.Count == 6 ? title + "…" : title;
+    }
+
+    private static string Summary(SavedText t)
+    {
+        var words = t.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        var study = t.Study.Count > 0 ? $" · {t.Study.Count} words to study" : "";
+        return $"{t.Added.ToLocalTime():d MMM} · {words} words{study}";
+    }
+}

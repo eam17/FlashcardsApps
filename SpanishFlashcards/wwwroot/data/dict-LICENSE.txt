@@ -1,0 +1,9 @@
+dict.tsv: Spanish-English dictionary used by the Read tab.
+
+Made by tools/dictionary/build_dict.py from the spanish_data project (https://github.com/doozan/spanish_data):
+  - meanings from es-en.data, built from English Wiktionary (https://en.wiktionary.org),
+    licensed CC BY-SA (https://creativecommons.org/licenses/by-sa/4.0/)
+  - word forms and frequency order from frequency.csv, based on hermitdave/FrequencyWords,
+    licensed CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/)
+
+dict.tsv is shared under the same terms (CC BY-SA). The rest of the app is not affected.

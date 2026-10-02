@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.JSInterop;
 using SpanishFlashcards.Models;
+using SpanishFlashcards.Models.Reading;
 using SpanishFlashcards.Models.Verbs;
 
 namespace SpanishFlashcards.Services;
@@ -48,6 +49,12 @@ public sealed class Progress
 
     /// <summary>Verbs tab: latest test result per tree item (keyed by item id, e.g. "t:pres/stem/o-ue").</summary>
     public Dictionary<string, VerbTestRecord> VerbTests { get; set; } = new();
+
+    /// <summary>Read tab: texts you pasted, with the words you chose to study for each.</summary>
+    public List<SavedText> Texts { get; set; } = new();
+
+    /// <summary>Words you added from texts that aren't in the word list (they become cards in "My words").</summary>
+    public List<MyWord> MyWords { get; set; } = new();
 
     /// <summary>Verbs tab, Decode: the tenses you picked (null = Smart: the first stage plus what you've practised).</summary>
     public List<string>? DecodeTenses { get; set; }
