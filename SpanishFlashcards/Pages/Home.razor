@@ -1039,7 +1039,10 @@ else
     private async Task Move(Word w, bool fromLearned)
     {
         today = Srs.Today;
-        progress.Cards[w.Es] = fromLearned ? Srs.Forgot(State(w), today) : Srs.MarkLearned(today);
+        // Relearn on a word you only marked as known (never learned it here): back to New, not counted as
+        // forgetting it. A word learned through reviews goes back to practice (Srs.Forgot).
+        if (fromLearned && Srs.IsRetired(State(w))) progress.Cards.Remove(w.Es);
+        else progress.Cards[w.Es] = fromLearned ? Srs.Forgot(State(w), today) : Srs.MarkLearned(today);
         await Store.SaveAsync(progress);
     }
 

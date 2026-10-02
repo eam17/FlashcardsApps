@@ -60,16 +60,27 @@
             }
         </section>
 
-        @if (a.Suggested.Count > 0 && a.CoveredShare < TextAnalysis.Target)
+        @if (a.ToLearn.Count > 0)
         {
+            @* The fewest words that take you to 95% (ticked), then every other new word (tick the ones you want). *@
+            var suggested = a.Suggested;
+            var more = a.ToLearn.Skip(suggested.Count).ToList();
+            var toAdd = a.ToLearn.Where(u => chosen.Contains(u.Key) && !u.InStudy).ToList();
             <section class="rd-card" aria-label="Words to learn">
-                <h3 class="rd-h3">Words to learn first</h3>
-                <div class="rd-words">
-                    @foreach (var u in a.Suggested)
-                    {
-                        @WordRow(u)
-                    }
-                </div>
+                @if (suggested.Count > 0)
+                {
+                    <h3 class="rd-h3">Words to learn first</h3>
+                    <div class="rd-words">
+                        @foreach (var u in suggested)
+                        {
+                            @WordRow(u)
+                        }
+                    </div>
+                }
+                else
+                {
+                    <h3 class="rd-h3">New words in this text</h3>
+                }
                 @if (added > 0)
                 {
                     <div class="game-feedback ok" role="status">
@@ -77,30 +88,33 @@
                         <span class="fb-word">@($"Added {added} word{(added == 1 ? "" : "s")} to study for this text.")</span>
                     </div>
                 }
-                @{ var toAdd = a.Suggested.Where(u => chosen.Contains(u.Key) && !u.InStudy).ToList(); }
                 @if (toAdd.Count > 0)
                 {
-                    <button type="button" class="primary wide" @onclick="() => StudyAll(toAdd)">@($"Study these {toAdd.Count} words")</button>
+                    <button type="button" class="primary wide" @onclick="() => StudyAll(toAdd)">@StudyLabel(toAdd)</button>
                 }
                 @if (Text.Study.Count > 0)
                 {
                     <button type="button" class="tool rd-study-now" @onclick="StudyNow">@($"Practise this text's words now ({Text.Study.Count})")</button>
                 }
-                @{ var more = a.ToLearn.Skip(a.Suggested.Count).ToList(); }
                 @if (more.Count > 0)
                 {
                     <button type="button" class="vb-weak-head rd-more-head" aria-expanded="@(showMore ? "true" : "false")" @onclick="() => showMore = !showMore">
-                        <span class="vb-persons-heading">@($"Other new words ({more.Count})")</span>
+                        <span class="vb-persons-heading">@(suggested.Count > 0 ? $"Other new words ({more.Count})" : $"Show them ({more.Count})")</span>
                         <span class="vb-weak-chevron" aria-hidden="true"></span>
                     </button>
                     @if (showMore)
                     {
+                        <p class="list-hint">Tick any you want to learn too, then tap Study.</p>
                         <div class="rd-words">
                             @foreach (var u in more)
                             {
                                 @WordRow(u)
                             }
                         </div>
+                        @if (toAdd.Count > 0)
+                        {
+                            <button type="button" class="primary wide" @onclick="() => StudyAll(toAdd)">@StudyLabel(toAdd)</button>
+                        }
                     }
                 }
             </section>
@@ -257,6 +271,7 @@
     private int? selected;
     private readonly HashSet<string> chosen = new();
     private readonly HashSet<string> unticked = new();
+    private readonly HashSet<string> ticked = new();
     private bool showMore, confirmDelete;
     // "Verbs in this text": the tense whose example is open, the example's token, and where to scroll next.
     private string? exTense;
@@ -272,10 +287,11 @@
     {
         A = TextAnalysis.Analyse(Text.Text, Words, StateOf, Book, Dict, Text.Study.ToHashSet());
         openStartsFor = null;
-        // Every suggested word starts ticked (unless you unticked it).
+        // The suggested words start ticked (unless you unticked them); other new words only if you ticked them.
         chosen.Clear();
-        foreach (var u in A.Suggested.Concat(A.ToLearn))
+        foreach (var u in A.Suggested)
             if (!unticked.Contains(u.Key)) chosen.Add(u.Key);
+        chosen.UnionWith(ticked);
     }
 
     private static int Pct(double share) => (int)Math.Round(share * 100);
@@ -445,10 +461,13 @@
             </span>
         </label>;
 
+    private static string StudyLabel(IReadOnlyCollection<ReadUnit> words) =>
+        words.Count == 1 ? "Study this word" : $"Study these {words.Count} words";
+
     private void Tick(ReadUnit u, ChangeEventArgs e)
     {
-        if (e.Value is true) { chosen.Add(u.Key); unticked.Remove(u.Key); }
-        else { chosen.Remove(u.Key); unticked.Add(u.Key); }
+        if (e.Value is true) { chosen.Add(u.Key); ticked.Add(u.Key); unticked.Remove(u.Key); }
+        else { chosen.Remove(u.Key); ticked.Remove(u.Key); unticked.Add(u.Key); }
     }
 
     private RenderFragment Info(TextAnalysis a, ReadToken tok, ReadUnit u) =>
