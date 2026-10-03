@@ -35,7 +35,7 @@ public sealed class ReadUnit
     public int Count { get; set; }
     /// <summary>Words of text it covers (a two-word phrase twice = 4).</summary>
     public int Tokens { get; set; }
-    /// <summary>For ordering: word list rank, or 1000 + dictionary rank.</summary>
+    /// <summary>For ordering: word list rank, or 10,000 + dictionary rank (list words first).</summary>
     public int Rank { get; init; }
     /// <summary>Token index of its first appearance.</summary>
     public int First { get; set; } = -1;
@@ -159,12 +159,14 @@ public sealed class TextAnalysis
             Status = Srs.IsLearned(state(w)) ? ReadStatus.Known : Srs.IsNew(state(w)) ? ReadStatus.New : ReadStatus.Learning,
         });
 
+        // The list may have a verb in its -se form (acercarse) where the dictionary has acercar.
         ReadUnit DictUnit(DictEntry e) =>
             singles.TryGetValue(e.Lemma.ToLowerInvariant(), out var listed)
+            || (e.Pos == "v" && singles.TryGetValue(e.Lemma.ToLowerInvariant() + "se", out listed))
                 ? WordUnit(listed)
                 : a.Unit("dict:" + e.Lemma, () => new ReadUnit
                 {
-                    Key = "dict:" + e.Lemma, Entry = e, Head = e.Lemma, Meaning = e.Meaning, Rank = 1000 + e.Rank,
+                    Key = "dict:" + e.Lemma, Entry = e, Head = e.Lemma, Meaning = e.Meaning, Rank = 10_000 + e.Rank,
                     Status = ReadStatus.NotInList,
                 });
 

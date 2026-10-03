@@ -446,9 +446,13 @@ def sentir_vos_fix(inf, out):
 
 # ----------------------------------------------------------------------------------------------
 
+VERB_TAB_WORDS = 1000
+
 def main(words_path, out_path):
     words = json.load(open(words_path, encoding="utf-8"))
-    verbs = [w for w in words if w["pos"] == "verb"]
+    # The Verbs tab covers the verbs among the first 1000 words (222 verbs). Later words (1001 and up) have no
+    # irregular-verb features here, so they are left out; their cards get a short conjugation line in words.json.
+    verbs = [w for w in words[:VERB_TAB_WORDS] if w["pos"] == "verb"]
     result = []
     for w in verbs:
         inf = w["es"]

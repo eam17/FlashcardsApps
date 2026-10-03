@@ -81,68 +81,108 @@ else
         <main class="content">
             @if (tab == Tab.Study)
             {
-                var studyQueue = ReviewQueue(groupWords, required);
+                var newGoalMet = NewGoalMet;
+                var studyQueue = ReviewQueue(groupWords, required, includeNew: !newGoalMet);
+                var newLeft = newGoalMet ? groupWords.Count(w => Srs.IsNew(State(w))) : 0;
                 var extraQueue = ExtraQueue(groupWords);
                 // Extra practice only starts when nothing that counts is left (and you tapped Keep going).
                 // A word you just got wrong in extra practice waits one card before it comes back.
+                // A card already on screen in extra practice stays there (a check-in coming due mustn't replace it).
                 onExtra = keepGoing && extraQueue.Count > 0
-                          && (studyQueue.Count == 0 || studyQueue.All(w => w.Es == lastAnswered));
+                          && (studyQueue.Count == 0 || studyQueue.All(w => w.Es == lastAnswered)
+                              || (onExtra && currentId is not null && extraQueue.Any(w => w.Es == currentId)));
                 var queue = onExtra ? extraQueue : studyQueue;
-                var card = CurrentCard(queue);
+                var waitFor = onExtra ? null : WaitingFor(studyQueue);
+                var card = waitFor is null ? CurrentCard(queue) : null;
 
                 <div class="status-row @(onExtra ? "extra" : "")">
                     <span class="status-text">
                         @if (onExtra)
                         {
-                            <text>Extra practice · doesn't move words up a level</text>
+                            <text>Extra practice · doesn't change when words come back</text>
                         }
                         else
                         {
-                            var newN = studyQueue.Count(w => Srs.IsNew(State(w)));
-                            var extraN = studyQueue.Count - newN - groupRequired;
+                            var learningN = words.Count(w => Srs.IsLearning(State(w)));
+                            var reviewN = studyQueue.Count(w => Srs.IsDue(State(w), today));
+                            var bonusN = Math.Max(0, reviewN - groupRequired);
                             var first = groupRequired == 0 && progress.ReviewsDoneToday > 0
                                 ? "Reviews done"
                                 : $"{groupRequired} reviews left";
-                            var extraText = extraN > 0 ? $" · {extraN} bonus reviews" : "";
-                            <text>@($"{first} · {newN} new{extraText}")</text>
+                            var learningText = learningN > 0 ? $" · {learningN} learning" : "";
+                            var bonusText = bonusN > 0 ? $" · {bonusN} bonus reviews" : "";
+                            var checkN = words.Count(w => IsCheckIn(State(w)));
+                            var checkText = checkN > 0 ? $" · {checkN} {(checkN == 1 ? "check-in" : "check-ins")}" : "";
+                            <text>@($"{first} · {NewTodayText}{learningText}{checkText}{bonusText}")</text>
                         }
                     </span>
                 </div>
 
-                @if (card is not null)
+                @if (waitFor is not null && State(waitFor) is { DueAt: { } waitDue })
+                {
+                    if (wakeFor != waitDue) { wakeFor = waitDue; _ = WakeAt(waitDue); }
+                    <div class="done">
+                        <div class="done-title">Un momento…</div>
+                        <p>@WaitText(waitFor, waitDue)</p>
+                        <button type="button" class="tool" @onclick="() => { waitSkipped = waitFor.Es; currentId = waitFor.Es; }">Show it now</button>
+                    </div>
+                }
+                else if (card is not null)
                 {
                     var state = State(card);
-                    shownCardKey = $"{card.Es}|{state?.Box}|{state?.LastSeen?.Ticks}|{onExtra}";
+                    shownCardKey = $"{card.Es}|{state?.Phase}|{state?.Step}|{answerCount}|{onExtra}";
+                    var mode = ModeFor(state);
                     var englishFirst = EnglishFirstFor(state);
-                    var kind = ChoiceKindFor(state, englishFirst);
+                    var kind = ChoiceKindFor(state);
                     var choiceMode = kind != ChoiceKind.None;
                     if (choiceMode) EnsureChoices(card, kind, state);
-                    var spanishVisible = flipped || !englishFirst;
+                    var showAnswer = mode == CardMode.Intro || flipped;
+                    var typing = progress.TypeAnswers && mode == CardMode.Recall && englishFirst;
+                    var spanishVisible = showAnswer || !englishFirst;
                     var cloze = card.ClozeParts;
 
                     <div class="study">
                         <div class="card-wrap">
-                            <button type="button" class="card @(flipped ? "back" : "front")" @onclick="Flip"
-                                    disabled="@choiceMode" aria-label="@CardAria(card, choiceMode)">
+                            <button type="button" class="card @(showAnswer ? "back" : "front") @(mode == CardMode.Intro ? "intro" : "")"
+                                    @onclick="() => Reveal(englishFirst)" disabled="@(choiceMode || mode == CardMode.Intro || flipped || typing)"
+                                    aria-label="@CardAria(card, mode, englishFirst)">
                                 <div class="card-meta">
                                     <span>@card.Tag</span>
                                     <span class="dots" title="@Srs.StageLabel(state)">
-                                        @for (var i = 1; i <= Srs.MaxLevel; i++)
+                                        @for (var i = 1; i <= 5; i++)
                                         {
-                                            <span class="dot @(state is not null && state.Box >= i ? "on" : "")"></span>
+                                            <span class="dot @(Srs.Strength(state) >= i ? "on" : "")"></span>
                                         }
                                     </span>
                                 </div>
                                 <div class="card-status">@CardStatus(state, required.Contains(card.Es))</div>
 
-                                @if (!flipped)
+                                @if (mode == CardMode.Intro)
                                 {
-                                    <div class="card-ask">@(englishFirst ? "Answer in Spanish" : "Answer in English")</div>
+                                    @* A new word: everything at once, to read and hear before it's tested. *@
+                                    <div class="card-ask">New word</div>
+                                    <SpanishWord Word="card" />
+                                    <div class="card-answer">@card.En</div>
+                                    <div class="card-example">
+                                        @if (cloze is not null)
+                                        {
+                                            <text>@(cloze.Value.Before)<mark>@card.Form</mark>@(cloze.Value.After)</text>
+                                        }
+                                        else
+                                        {
+                                            @card.Example
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(card.ExampleEn))
+                                    {
+                                        <div class="card-sub">@card.ExampleEn</div>
+                                    }
+                                    @ConjugationBox(card)
                                 }
-
-                                @if (!flipped && englishFirst)
+                                else if (!showAnswer && englishFirst)
                                 {
                                     @* English first: meaning + Spanish sentence with the word blanked *@
+                                    <div class="card-ask">Answer in Spanish</div>
                                     <div class="card-word en">@card.En</div>
                                     <div class="card-pos">@card.Pos</div>
                                     <div class="card-example">
@@ -155,14 +195,15 @@ else
                                             @card.Example
                                         }
                                     </div>
-                                    <div class="card-hint">@(choiceMode ? "Pick the Spanish word below" : "Say the Spanish word, then tap to check")</div>
+                                    <div class="card-hint">@(choiceMode ? "Pick the Spanish word below" : typing ? "Type the Spanish word below" : "Say the Spanish word, then tap to check")</div>
                                 }
-                                else if (!flipped)
+                                else if (!showAnswer)
                                 {
                                     @* Spanish first *@
+                                    <div class="card-ask">Answer in English</div>
                                     <SpanishWord Word="card" />
                                     <div class="card-example">@card.Example</div>
-                                    <div class="card-hint">@(choiceMode ? "Pick the meaning below" : "Tap to see the meaning")</div>
+                                    <div class="card-hint">@(choiceMode ? "Pick the meaning below" : "Say the meaning, then tap to check")</div>
                                 }
                                 else
                                 {
@@ -179,24 +220,23 @@ else
                                             @card.Example
                                         }
                                     </div>
-                                    <div class="card-sub">@card.ExampleEn</div>
-                                    @if (card.Conjugation is not null)
+                                    @if (!string.IsNullOrEmpty(card.ExampleEn))
                                     {
-                                        var cj = card.ConjugationParts;
-                                        <div class="conj">
-                                            <div><span class="conj-label">Present</span> @cj.Present</div>
-                                            @if (cj.Past is not null)
-                                            {
-                                                <div><span class="conj-label">Past</span> @cj.Past</div>
-                                            }
-                                        </div>
+                                        <div class="card-sub">@card.ExampleEn</div>
                                     }
+                                    @ConjugationBox(card)
                                 }
                             </button>
 
                             @if (notice is not null)
                             {
-                                <p class="toast slow" role="status" aria-label="Slow answer: the word stays at its level"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></p>
+                                <p class="toast @(noticeSlow ? "slow" : "")" role="status">
+                                    @if (noticeSlow)
+                                    {
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                                    }
+                                    <span>@notice</span>
+                                </p>
                             }
 
                             @if (canSpeak && spanishVisible)
@@ -214,7 +254,15 @@ else
                             }
                         </div>
 
-                        @if (choiceMode && picked is null)
+                        @if (mode == CardMode.Intro)
+                        {
+                            <div class="actions two">
+                                <button type="button" class="act skip" @onclick="() => AlreadyKnowIt(card)">I already know it</button>
+                                <button type="button" class="act known" @onclick="() => MeetWord(card)">Got it</button>
+                            </div>
+                            <p class="choice-outcome">Next: pick the meaning, then the Spanish, then recall the Spanish yourself.</p>
+                        }
+                        else if (choiceMode && picked is null)
                         {
                             @* Multiple choice: 6 options *@
                             <div class="choices" role="group" aria-label="@(kind == ChoiceKind.Spanish ? "Choose the Spanish word" : "Choose the meaning")">
@@ -232,45 +280,107 @@ else
                             <div class="choices" aria-live="polite">
                                 @foreach (var opt in choices)
                                 {
-                                    <div class="choice @(kind == ChoiceKind.Spanish ? "es" : "") @(opt == card ? "right" : opt == picked ? "wrong" : "dim")">
+                                    <div class="choice @(kind == ChoiceKind.Spanish ? "es" : "") @(opt.Es == card.Es ? "right" : opt.Es == picked?.Es ? "wrong" : "dim")">
                                         @(kind == ChoiceKind.Spanish ? opt.Es : opt.En)
-                                        @if (opt == card && pickedSlow)
+                                        @if (opt.Es == card.Es && pickedSlow)
                                         {
-                                            <span class="slow-mark" title="Right, but slow: the word stays at its level"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>
+                                            <span class="slow-mark" title="Right, but slow: one more try in a minute"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg></span>
                                         }
                                     </div>
                                 }
                             </div>
+                            <p class="choice-outcome">@ChoiceOutcome(card)</p>
                             <button type="button" class="primary wide" @onclick="() => ContinueAfterChoice(card)">
-                                @(picked == card ? "Correct! Continue" : "Continue")
+                                @(picked?.Es == card.Es ? "Correct! Continue" : "Continue")
                             </button>
+                        }
+                        else if (typing && !flipped)
+                        {
+                            @* Recall the Spanish and type it: checked for you (a missing accent or a slip counts as Hard). *@
+                            <div class="vp-type">
+                                <input id="word-answer" class="vp-input" type="text" lang="es" autocomplete="off" autocapitalize="off"
+                                       autocorrect="off" spellcheck="false" placeholder="Type the Spanish" aria-label="Your answer in Spanish"
+                                       @bind="typedText" @bind:event="oninput" @onkeydown="e => TypedKey(e, card)" />
+                                <div class="vp-accents seven" role="group" aria-label="Letters with accents">
+                                    @foreach (var ch in AccentKeys)
+                                    {
+                                        var c = ch;
+                                        <button type="button" class="vp-key" @onclick="() => AddLetter(c)">@c</button>
+                                    }
+                                </div>
+                                <button type="button" class="primary wide" disabled="@(string.IsNullOrWhiteSpace(typedText))" @onclick="() => CheckTyped(card)">Check</button>
+                            </div>
+                            <button type="button" class="skip-link" @onclick="() => DontKnow(card)">I don't know it</button>
+                        }
+                        else if (typing && typedResult is not null)
+                        {
+                            var tr = typedOverride ? WordCheckResult.Right : typedResult ?? WordCheckResult.Wrong;
+                            <div class="game-feedback @(tr == WordCheckResult.Right ? "ok" : tr == WordCheckResult.Wrong ? "no" : "meh")" role="status">
+                                <span class="fb-icon" aria-hidden="true">@(tr == WordCheckResult.Right ? "✓" : tr == WordCheckResult.Wrong ? "✗" : "~")</span>
+                                <span class="fb-word">@TypedMessage(card)</span>
+                            </div>
+                            <div class="vp-next">
+                                @if (!typedOverride && typedResult is not WordCheckResult.Right && !string.IsNullOrWhiteSpace(typedText))
+                                {
+                                    <button type="button" class="tool" @onclick="() => typedOverride = true">Count it as right</button>
+                                }
+                                <button id="word-continue" type="button" class="primary wide" @onclick="() => ContinueTyped(card)">Continue</button>
+                            </div>
+                            <p class="choice-outcome">@TypedOutcome(state)</p>
+                        }
+                        else if (!flipped)
+                        {
+                            <button type="button" class="primary wide" @onclick="() => Reveal(englishFirst)">Show answer</button>
+                            <button type="button" class="skip-link" @onclick="() => Skip(card)">Skip</button>
                         }
                         else
                         {
+                            @* Grade only after seeing the answer. *@
                             <div class="actions">
-                                <button type="button" class="act learning" @onclick="() => AnswerForgot(card)">Still learning</button>
-                                <button type="button" class="act skip" @onclick="() => Skip(card)">Skip</button>
-                                <button type="button" class="act known" @onclick="() => AnswerKnow(card)">I know it</button>
+                                <button type="button" class="act learning" @onclick="() => ApplyRecall(card, Rating.Forgot, revealSlow)">Forgot</button>
+                                <button type="button" class="act skip" @onclick="() => ApplyRecall(card, Rating.Hard, revealSlow)">Hard</button>
+                                <button type="button" class="act known" @onclick="() => ApplyRecall(card, Rating.Good, revealSlow)">Got it</button>
                             </div>
+                            <p class="choice-outcome">@GradeHint(state)</p>
                         }
                     </div>
                 }
                 else
                 {
                     var nextDue = NextDueIn(groupWords);
+                    var laterChecks = progress.CheckIns
+                        ? words.Select(State).Where(s => Srs.HasCheckInLater(s, DateTime.UtcNow, today)).Select(s => s!.CheckIn!.Value).ToList()
+                        : new List<DateTime>();
+                    if (laterChecks.Count > 0 && wakeFor != laterChecks.Min()) { wakeFor = laterChecks.Min(); _ = WakeAt(laterChecks.Min()); }
                     <div class="done">
                         <div class="done-title">¡Muy bien!</div>
                         <p>
-                            You're done with this group for today.
+                            @if (newLeft > 0)
+                            {
+                                <span>@($"You've started your {progress.DailyNewLimit} new words for today and done your reviews. You're good for now!")</span>
+                            }
+                            else
+                            {
+                                <span>You're done with this group for today.</span>
+                            }
                             @if (nextDue is not null)
                             {
                                 <span> Next review: @(nextDue.Value.ToString("dddd, MMM d")).</span>
                             }
                         </p>
+                        @if (laterChecks.Count > 0)
+                        {
+                            <p class="small">@CheckInLaterText(laterChecks)</p>
+                        }
+                        @if (newLeft > 0)
+                        {
+                            <button type="button" class="primary" @onclick="LearnMoreNew">Learn more new words</button>
+                            <p class="small">@($"{newLeft} new words left in this group. More new words today means more reviews in the next few days.")</p>
+                        }
                         @if (extraQueue.Count > 0)
                         {
-                            <button type="button" class="primary" @onclick="KeepGoing">Keep going</button>
-                            <p class="small">Extra cards are just for practice: they don't move words up a level.</p>
+                            <button type="button" class="@(newLeft > 0 ? "tool" : "primary")" @onclick="KeepGoing">@(newLeft > 0 ? "Practise words I've seen" : "Keep going")</button>
+                            <p class="small">Extra practice doesn't change when words come back, unless you forget one.</p>
                         }
                     </div>
                 }
@@ -292,8 +402,39 @@ else
                     </section>
 
                     <section class="set-card">
+                        <h2><label for="daily-new">New words a day</label></h2>
+                        <p>After this many new words (and your reviews), Cards tells you you're done for today. You can always tap <strong>Learn more new words</strong> to keep going.</p>
+                        <select id="daily-new" class="small-select" @bind="progress.DailyNewLimit" @bind:after="SaveProgress">
+                            <option value="5">5 a day</option>
+                            <option value="10">10 a day</option>
+                            <option value="15">15 a day</option>
+                            <option value="20">20 a day</option>
+                            <option value="30">30 a day</option>
+                            <option value="0">No goal</option>
+                        </select>
+                    </section>
+
+                    <section class="set-card">
+                        <h2>Answering in Spanish</h2>
+                        <label class="check-row">
+                            <input type="checkbox" @bind="progress.TypeAnswers" @bind:after="SaveProgress" />
+                            <span>Type the Spanish (checked for you)</span>
+                        </label>
+                        <p>Recalling the Spanish yourself is what really shows you know a word. With this on, you type it and the app checks it. A missing accent still counts as remembered (you'll see the right spelling); the wrong article or a one-letter slip counts as Hard. <strong>Count it as right</strong> is there if the check gets it wrong. Off: say it, show the answer and grade yourself.</p>
+                    </section>
+
+                    <section class="set-card">
+                        <h2>Check-in later today</h2>
+                        <label class="check-row">
+                            <input type="checkbox" @bind="progress.CheckIns" @bind:after="SaveProgress" />
+                            <span>Check today's new words again later</span>
+                        </label>
+                        <p>A word you finish learning comes back once more about @Srs.CheckInHours hours later the same day, for a quick recall in Spanish. Remember it and nothing changes: its first review is still tomorrow. Forget it and you practise it again a minute later. Words learned in the evening skip it, since their first review is the next morning anyway. Check-ins don't count toward your review limit.</p>
+                    </section>
+
+                    <section class="set-card">
                         <h2>Answer timer</h2>
-                        <p>A right answer only moves a word up if it's this quick. Slower right answers show a small clock and the word stays at its level.</p>
+                        <p>How long you get before a right answer counts as a struggle. In the first steps a slow answer repeats the step; in a review, a slow "Got it" counts as Hard (the word comes back a bit sooner, and it's marked as a bit harder). The time runs until you pick an option, tap Check or tap Show answer. Typing the Spanish gets twice the Spanish time.</p>
                         <div class="timer-settings">
                             <label for="timer-en">Answer in English</label>
                             <select id="timer-en" class="small-select" @bind="progress.EnglishAnswerSeconds" @bind:after="SaveProgress">
@@ -315,12 +456,73 @@ else
                     </section>
 
                     <section class="set-card">
+                        <h2>How well you remember</h2>
+                        @if (history is null)
+                        {
+                            <p>Loading your review history…</p>
+                        }
+                        else
+                        {
+                            var stats = ReviewHistory.Stats(history);
+                            @if (stats.Reviews < MinReviewsForStats)
+                            {
+                                <p>@($"Not enough reviews in the last 30 days to measure yet ({stats.Reviews} so far). After a couple of weeks of reviews this shows how often you remember the words that come back.")</p>
+                            }
+                            else
+                            {
+                                <p>Last 30 days: you remembered <strong>@Pct(stats.Rate)</strong> of @stats.Reviews reviews. The aim is @Pct(Fsrs.Retention).</p>
+                                <ul class="set-list">
+                                    @foreach (var (label, n, ok) in stats.ByGap)
+                                    {
+                                        <li>@($"After {label}: {Pct(n == 0 ? 0 : (double)ok / n)} of {n}")</li>
+                                    }
+                                </ul>
+                                @if (stats.Rate < Fsrs.Retention - 0.05)
+                                {
+                                    <p class="small">A bit below the aim. Once you have a few months of history, the schedule can be fitted to your own memory (see below).</p>
+                                }
+                            }
+                            @if (stats.CheckIns > 0)
+                            {
+                                <p>@($"Same-day check-ins: {Pct((double)stats.CheckInsRemembered / stats.CheckIns)} remembered ({stats.CheckIns}).")</p>
+                            }
+                            var recallNow = RecallNow();
+                            @if (recallNow is { } r)
+                            {
+                                <p>@($"Estimate for right now: you'd remember about {Pct(r)} of the words in your reviews.")</p>
+                            }
+                            <p class="small">@($"{history.Count:N0} answers saved on this device. They're included in Export JSON.")</p>
+                        }
+
+                        <h3><label for="retention">Aim</label></h3>
+                        <p>Each review is planned for the day your chance of remembering the word drops to this. Higher means you remember more, with more reviews a day; lower means fewer reviews and more forgetting. 90% suits most people. A change applies from each word's next review.</p>
+                        <select id="retention" class="small-select" @bind="RetentionPercent" @bind:after="RetentionChanged">
+                            <option value="85">85%</option>
+                            <option value="90">90%</option>
+                            <option value="95">95%</option>
+                        </select>
+
+                        <h3><label for="fsrs-params">Fit the schedule to you</label></h3>
+                        <p>The schedule uses FSRS, the same memory model as Anki, with standard settings fitted to millions of reviews. After a few months of reviews, <strong>Download history</strong> gives the file an FSRS optimizer reads, and the 21 numbers it returns can go here to fit the schedule to your memory.</p>
+                        <p class="small">@(Fsrs.UsingDefaults ? "Now using the standard settings." : "Now using your own settings.")</p>
+                        <textarea id="fsrs-params" class="params-box" rows="3" spellcheck="false" @bind="paramsText" placeholder="@Fsrs.Format(Fsrs.DefaultParameters)"></textarea>
+                        <div class="backup-buttons">
+                            <button type="button" class="tool" @onclick="ApplyParameters">Use these</button>
+                            <button type="button" class="tool" @onclick="StandardParameters">Back to standard</button>
+                            <button type="button" class="tool" @onclick="ExportHistoryCsv">Download history</button>
+                        </div>
+                        @if (paramsMessage is not null)
+                        {
+                            <p class="backup-msg @(paramsError ? "error" : "")" role="status">@paramsMessage</p>
+                        }
+                    </section>
+
+                    <section class="set-card">
                         <h2><label for="extra-dir">Extra practice</label></h2>
                         <p>After today's cards, <strong>Keep going</strong> lets you practice words you've already seen. Choose which side those cards show first.</p>
                         <select id="extra-dir" class="small-select" @bind="progress.PracticeDirection" @bind:after="SaveProgress">
-                            <option value="auto">Same as their level</option>
-                            <option value="es">Spanish first</option>
-                            <option value="en">English first</option>
+                            <option value="auto">English first (answer in Spanish)</option>
+                            <option value="es">Spanish first (answer in English)</option>
                         </select>
                     </section>
 
@@ -366,10 +568,13 @@ else
                     <section class="set-card">
                         <h2>How it works</h2>
                         <ul class="set-list">
-                            <li><strong>Cards</strong>: today's reviews, then new words. Remembering a due word moves it up a level: 1 day → 3 days → 1 week → 2 weeks → 1 month.</li>
-                            <li>New and level-1 words: pick the English. Level 2: pick the Spanish. Level 3+: recall the Spanish yourself. Level 4 = learned.</li>
-                            <li>When you're done, <strong>Keep going</strong> gives you extra practice. It never moves words up, so it can't make a word look learned before it is.</li>
-                            <li>Answer fast to move up (time limits above). A right but slow answer shows a small clock and the word stays at its level.</li>
+                            <li><strong>New words</strong>: first a short introduction (meaning, example, sound). In the same session you then pick the meaning, a few minutes later pick the Spanish, and ten minutes after that recall the Spanish yourself. A miss comes back a minute later.</li>
+                            <li><strong>Check-in</strong>: about @Srs.CheckInHours hours after you learn a word it comes back once for a quick recall, if that's still the same day (see above).</li>
+                            <li><strong>Reviews</strong> start the next day and always ask for the Spanish: you see the English and type the Spanish (or say it and grade yourself, see above). Every answer updates the word's memory, and its next review is planned for when you're about to forget it (see <em>How well you remember</em>). Words you find easy spread out fast (a word you always get right comes back after about a week, then a month, then four months); hard ones come back more often. <strong>Hard</strong> grows the gap less and marks the word as a bit harder. <strong>Forgot</strong> gives a quick recall step a few minutes later and a much shorter gap.</li>
+                            <li>A word counts as <strong>learned</strong> once its next review is about three weeks away (often after your second or third review). Learned words still come back now and then, further apart each time.</li>
+                            <li>Your reviews come first, then new words (up to your daily goal). Each word counts once a day toward the review limit.</li>
+                            <li>The app's day starts at 4 am, so a late-night session counts as that evening.</li>
+                            <li>When you're done, <strong>Keep going</strong> gives you extra practice. It never pushes words further out, so it can't make a word look learned before it is.</li>
                             <li><strong>Mark learned</strong> in the Words list: the word never comes back.</li>
                             <li>Words you forget twice or more become <strong>tricky</strong> and show up more in games.</li>
                             <li><strong>Verbs</strong>: conjugation by tense, with rules and practice for each group. Separate from the word cards.</li>
@@ -445,7 +650,7 @@ else
                                                 <span class="badge tricky">tricky</span>
                                             }
                                         </div>
-                                        <div class="row-sub">@w.En · @Srs.DueLabel(State(w), today)@(Srs.IsNew(State(w)) || Srs.IsRetired(State(w)) ? "" : Srs.AsksForSpanish(State(w)) ? " · answer in Spanish" : " · answer in English")</div>
+                                        <div class="row-sub">@w.En · @Srs.DueLabel(State(w), today)</div>
                                     </div>
                                     @{ var isLearned = Srs.IsLearned(State(w)); }
                                     <button type="button" class="tool"
@@ -509,31 +714,43 @@ else
 
     private string WordsHint => wordsFilter switch
     {
-        WordsFilter.Learned => "Words land here after you answer them in Spanish on schedule up to level 4, or when you tap Mark learned (those never come back). Tap Relearn to practice a word again.",
-        WordsFilter.ToLearn => "New words start with picking the English meaning. At level 2 they switch: you see the English and answer in Spanish. Tap Mark learned for a word you already know.",
+        WordsFilter.Learned => "A word counts as learned once its next review is about three weeks away, often after your second or third review (it keeps coming back, further apart each time), or when you tap Mark learned (those never come back). Tap Relearn to practise a word from the start.",
+        WordsFilter.ToLearn => "New words start with a short introduction, then you pick the meaning and the Spanish. After that they come back for reviews, further apart each time you remember them. Tap Mark learned for a word you already know.",
         _ => "Every word in this group. Mark learned skips a word for good; Relearn brings it back.",
     };
     private enum ChoiceKind { None, English, Spanish }
 
+    /// <summary>What the card on screen asks: meet a new word, pick from options, or recall it yourself.</summary>
+    private enum CardMode { Intro, PickEnglish, PickSpanish, Recall }
+
     private sealed record GroupDef(string Id, string Label, string Section, Func<Word, bool> Includes);
 
     private IReadOnlyList<Word>? words;
-    /// <summary>The 1,000-word list (words also has your own words from the Read tab).</summary>
+    /// <summary>The word list, 2,000 words (words also has your own words from the Read tab).</summary>
     private IReadOnlyList<Word> baseWords = [];
     private Dictionary<string, Word> byId = new();
+    /// <summary>Every spelling in the word list, for the typed-answer check (papa isn't papá, coger isn't comer).</summary>
+    private HashSet<string> listSpellings = new();
     private Progress progress = new();
     private List<GroupDef> groups = new();
 
     private DateOnly today = Srs.Today;
     private Tab tab = Tab.Study;
     private bool keepGoing;   // tapped Keep going: extra practice after today's cards
+    private DateOnly? moreNewOn;   // tapped Learn more new words (that day only)
     private bool onExtra;     // the card on screen is extra practice (set while rendering)
     private string groupId = "freq:1";
     private bool flipped;
     private int practiceIdx;
     private string? lastAnswered;
+    private string? currentId;     // the card on screen (kept until answered or skipped)
+    private string? waitSkipped;   // "Show it now" on the short wait before a learning step
+    private DateTime? wakeFor;     // a re-draw is planned for this time
+    private int answerCount;       // goes up with every answer or skip (restarts the timer even for the same card)
     private readonly HashSet<string> skipped = new();
-    private string? notice;
+    private string? notice;      // a short message over the bottom of the card ("Next review in 8 days")
+    private bool noticeSlow;     // ...with a clock: the answer was slow
+    private bool revealSlow;     // the answer was shown after the time limit (Settings → Answer timer)
     private int noticeVersion;
     private bool confirmReset;
     private bool canSpeak;
@@ -546,13 +763,22 @@ else
     private CardState? pendingNext;
     private bool pickedSlow;
 
-    // Answer timer: a right answer slower than the limit in Settings keeps the word at its level (see Srs.Slow).
+    // Answer timer: a right answer slower than the limit in Settings repeats a learning step, or counts as Hard in a review.
     private static readonly int[] TimerChoices = [2, 3, 4, 5, 6, 7, 8, 10, 12, 15];
     private string? shownCardKey;  // the card on screen (set while rendering)
     private string? timedCardKey;  // the card the timer was started for
 
     private string? transferMessage;
     private bool transferError;
+
+    // Review history and the schedule settings (Settings → How well you remember)
+    private const int MinReviewsForStats = 20;
+    private List<ReviewEntry>? history;   // loaded when Settings opens; answers are added as you go
+    private int lastAnswerMs;             // time taken by the answer being saved (for the history)
+    private Rating? pendingRating;        // the rating of a multiple-choice pick, saved on Continue
+    private string paramsText = "";
+    private string? paramsMessage;
+    private bool paramsError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -562,6 +788,7 @@ else
 
         if (progress.Group is { } g && groups.Any(x => x.Id == g)) groupId = g;
         VerbSettings.Vosotros = progress.ShowVosotros;
+        if (progress.PracticeDirection == "en") progress.PracticeDirection = "auto"; // the two options became one
     }
 
     /// <summary>The word list plus your own words (Read tab), and the groups (including one per text).</summary>
@@ -578,6 +805,7 @@ else
         if (progress.Order is null || progress.Order.Count != all.Count || progress.Order.Any(id => !byId.ContainsKey(id)))
             progress.Order = null;
         if (!groups.Any(x => x.Id == groupId)) groupId = "freq:1";
+        listSpellings = WordCheck.Spellings(all);
         words = all;
     }
 
@@ -605,6 +833,13 @@ else
         {
             timedCardKey = shownCardKey;
             try { await JS.InvokeVoidAsync("palabras.timerStart"); }
+            catch (Exception) { }
+            if (progress.TypeAnswers) focusFor = "answer";
+        }
+        if (focusFor is { } which)
+        {
+            focusFor = null;
+            try { await JS.InvokeVoidAsync("palabras.focusById", which == "continue" ? "word-continue" : "word-answer"); }
             catch (Exception) { }
         }
         if (!firstRender) return;
@@ -678,13 +913,14 @@ else
         {
             progress.ReviewDay = today;
             progress.ReviewsDoneToday = 0;
+            progress.NewDoneToday = 0;
         }
     }
 
     /// <summary>
     /// The due reviews you HAVE to do today, across all words: up to the daily limit minus what
-    /// you've already done. Lower levels and the most overdue words go first; the rest wait as
-    /// optional extras and roll forward to later days.
+    /// you've already done. The shortest gaps (the most fragile words) and the most overdue go first;
+    /// the rest wait as optional bonus reviews and roll forward to later days.
     /// </summary>
     private HashSet<string> RequiredReviewIds()
     {
@@ -693,7 +929,7 @@ else
         if (left == 0 || words is null) return new HashSet<string>();
         return words
             .Where(w => Srs.IsDue(State(w), today))
-            .OrderBy(w => State(w)!.Box)
+            .OrderBy(w => State(w)!.Interval)
             .ThenBy(w => State(w)!.Due)
             .ThenBy(w => w.Rank)
             .Take(left)
@@ -701,32 +937,49 @@ else
             .ToHashSet();
     }
 
-    /// <summary>Required reviews first, then new words, then optional extra reviews. Skipped cards go last.</summary>
-    private List<Word> ReviewQueue(List<Word> groupWords, HashSet<string> required)
+    /// <summary>
+    /// What Cards shows next: learning steps that are due (a word you just met or missed comes back a few
+    /// cards later), then required reviews, then new words, then bonus reviews, and finally learning steps
+    /// that aren't quite due yet (so a session can finish what it started). Skipped cards go last.
+    /// </summary>
+    private List<Word> ReviewQueue(List<Word> groupWords, HashSet<string> required, bool includeNew = true)
     {
+        var now = DateTime.UtcNow;
+        // Learning steps come from every word, whatever group is picked: they can't wait until you come back.
+        var steps = words!
+            .Where(w => Srs.IsStepDue(State(w), now))
+            .OrderBy(w => State(w)!.DueAt);
+        // Check-ins for words learned earlier today, also from every word.
+        var checks = words!
+            .Where(w => IsCheckIn(State(w)))
+            .OrderBy(w => State(w)!.CheckIn);
         var due = groupWords
             .Where(w => Srs.IsDue(State(w), today))
-            .OrderBy(w => State(w)!.Box)
+            .OrderBy(w => State(w)!.Interval)
             .ThenBy(w => State(w)!.Due)
             .ThenBy(w => State(w)!.LastSeen ?? DateTime.MinValue)
             .ThenBy(w => w.Rank)
             .ToList();
         var must = due.Where(w => required.Contains(w.Es));
-        var extra = due.Where(w => !required.Contains(w.Es));
-        var fresh = groupWords.Where(w => Srs.IsNew(State(w))).OrderBy(w => w.Rank);
-        var all = must.Concat(fresh).Concat(extra).ToList();
+        var bonus = due.Where(w => !required.Contains(w.Es));
+        var fresh = groupWords.Where(w => includeNew && Srs.IsNew(State(w))).OrderBy(w => w.Rank);
+        var ahead = words!
+            .Where(w => Srs.IsLearning(State(w)) && !Srs.IsStepDue(State(w), now)
+                        && Srs.IsStepDue(State(w), now, Srs.LearnAheadMinutes))
+            .OrderBy(w => State(w)!.DueAt);
+        var all = steps.Concat(checks).Concat(must).Concat(fresh).Concat(bonus).Concat(ahead).ToList();
         return all.Where(w => !skipped.Contains(w.Es)).Concat(all.Where(w => skipped.Contains(w.Es))).ToList();
     }
 
     /// <summary>
-    /// Extra practice: words you've seen that aren't due. Tricky and low-level words first,
+    /// Extra practice: words in reviews that aren't due. Tricky words and the shortest gaps first,
     /// least recently seen first. Marked-as-known words never come back.
     /// </summary>
     private List<Word> ExtraQueue(List<Word> groupWords) =>
         groupWords
-            .Where(w => State(w) is { } s && s.Box > 0 && !s.Retired && !Srs.IsDue(s, today))
+            .Where(w => State(w) is { Phase: CardPhase.Review, Retired: false } s && !Srs.IsDue(s, today))
             .OrderByDescending(w => Srs.IsTricky(State(w)))
-            .ThenBy(w => State(w)!.Box)
+            .ThenBy(w => State(w)!.Interval)
             .ThenBy(w => State(w)!.LastSeen ?? DateTime.MinValue)
             .ThenBy(w => w.Rank)
             .ToList();
@@ -734,76 +987,188 @@ else
     private int PracticeIndex(List<Word> queue) =>
         queue.Count == 0 ? 0 : ((practiceIdx % queue.Count) + queue.Count) % queue.Count;
 
+    /// <summary>
+    /// The card to show. Once a card is on screen it stays until you answer or skip it, even if a learning
+    /// step becomes due meanwhile (so the card can't change under your finger).
+    /// </summary>
     private Word? CurrentCard(List<Word> queue)
     {
-        if (queue.Count == 0) return null;
-        if (onExtra) return queue[PracticeIndex(queue)];
+        if (queue.Count == 0) { currentId = null; return null; }
+        if (currentId is not null && queue.FirstOrDefault(w => w.Es == currentId) is { } stay) return stay;
+        Word pick;
+        if (onExtra) pick = queue[PracticeIndex(queue)];
         // Avoid showing the card you just answered twice in a row.
-        return queue.Count > 1 && queue[0].Es == lastAnswered ? queue[1] : queue[0];
+        else pick = queue.Count > 1 && queue[0].Es == lastAnswered ? queue[1] : queue[0];
+        currentId = pick.Es;
+        return pick;
+    }
+
+    /// <summary>
+    /// All that's left are learning steps that aren't due yet: rather than asking them straight away, wait
+    /// a moment for the soonest one (spacing them out is what makes them stick). Null otherwise.
+    /// </summary>
+    private Word? WaitingFor(List<Word> queue)
+    {
+        if (queue.Count == 0 || currentId is not null) return null;
+        var now = DateTime.UtcNow;
+        if (!queue.All(w => Srs.IsLearning(State(w)) && !Srs.IsStepDue(State(w), now))) return null;
+        var soonest = queue.OrderBy(w => State(w)!.DueAt).First();
+        return waitSkipped == soonest.Es ? null : soonest;
+    }
+
+    private static string WaitText(Word w, DateTime dueUtc)
+    {
+        var mins = (int)Math.Ceiling((dueUtc - DateTime.UtcNow).TotalMinutes);
+        var when = mins <= 1 ? "in under a minute" : $"in about {mins} minutes";
+        return $"{w.Es} comes back {when}. A short gap is what makes it stick.";
+    }
+
+    /// <summary>Re-draw when the waited-for step is due.</summary>
+    private async Task WakeAt(DateTime dueUtc)
+    {
+        var delay = dueUtc - DateTime.UtcNow;
+        if (delay > TimeSpan.Zero) await Task.Delay(delay + TimeSpan.FromMilliseconds(300));
+        await InvokeAsync(StateHasChanged);
     }
 
     private DateOnly? NextDueIn(List<Word> groupWords)
     {
-        var dates = groupWords.Select(State).Where(s => s is { Box: > 0, Retired: false }).Select(s => s!.Due).ToList();
+        var dates = groupWords.Select(State).Where(s => s is { Phase: CardPhase.Review, Retired: false }).Select(s => s!.Due).ToList();
         return dates.Count == 0 ? null : dates.Min();
+    }
+
+    /// <summary>A word learned earlier today whose check-in is due (and check-ins are on).</summary>
+    private bool IsCheckIn(CardState? s) => progress.CheckIns && Srs.IsCheckInDue(s, DateTime.UtcNow, today);
+
+    /// <summary>"Come back after 3:40 PM for a quick check of 6 words you learned today."</summary>
+    private static string CheckInLaterText(List<DateTime> times)
+    {
+        var first = times.Min().ToLocalTime();
+        var n = times.Count;
+        var what = n == 1 ? "a word" : $"{n} words";
+        return $"Come back after {first:h:mm tt} for a quick check of {what} you learned today.";
     }
 
     /// <summary>How many cards are already due on each day (used to spread out new review dates).</summary>
     private Dictionary<DateOnly, int> LoadByDay() =>
         progress.Cards.Values
-            .Where(c => c.Box > 0 && !c.Retired)
+            .Where(c => c.Phase == CardPhase.Review && !c.Retired)
             .GroupBy(c => c.Due)
             .ToDictionary(g => g.Key, g => g.Count());
 
     private string CardStatus(CardState? s, bool isRequired)
     {
-        if (Srs.IsNew(s)) return "New word";
         var tricky = Srs.IsTricky(s) ? " · tricky" : "";
-        if (Srs.IsDue(s, today)) return $"{Srs.StageLabel(s)} · {(isRequired ? "due now" : "bonus review")}{tricky}";
-        return $"{Srs.StageLabel(s)} · extra practice ({Srs.DueLabel(s, today)}){tricky}";
+        if (Srs.IsNew(s)) return "New word";
+        if (s!.Phase == CardPhase.Learning) return $"Learning · step {Math.Max(1, s.Step)} of {Srs.LearningSteps}{tricky}";
+        if (s.Phase == CardPhase.Relearning) return $"Relearning{tricky}";
+        if (!onExtra && IsCheckIn(s)) return "Check-in · learned earlier today";
+        var gap = $"last gap {Srs.GapText(s.Interval)}";
+        if (Srs.IsDue(s, today)) return $"{(isRequired ? "Review" : "Bonus review")} · {gap}{tricky}";
+        return $"Extra practice · {Srs.DueLabel(s, today)}{tricky}";
     }
 
-    private string CardAria(Word w, bool choiceMode)
+    private string CardAria(Word w, CardMode mode, bool englishFirst)
     {
+        if (mode == CardMode.Intro) return $"New word: {w.SpanishWithArticle}, {w.En}. Example: {w.Example}";
         if (flipped) return $"Answer: {w.SpanishWithArticle}, {w.En}.";
-        var english = EnglishFirstFor(State(w));
-        if (choiceMode)
-            return english
+        if (mode is CardMode.PickEnglish or CardMode.PickSpanish)
+            return englishFirst
                 ? $"English: {w.En}. Choose the Spanish word below."
                 : $"Spanish: {w.SpanishWithArticle}. Choose the meaning below.";
-        return english
+        return englishFirst
             ? $"English: {w.En}. Answer in Spanish, then tap to check."
             : $"Spanish: {w.SpanishWithArticle}. Answer in English, then tap to check.";
     }
 
     /// <summary>
-    /// Which side a card shows first. Normally it follows the card's level: new and level-1 cards
-    /// show Spanish (answer in English); from level 2 they show English (answer in Spanish).
-    /// Extra practice can override this (Settings → Extra practice).
+    /// New → introduction. Learning step 1 → pick the English (recognise it); step 2 → pick the Spanish;
+    /// step 3, relearning, reviews and extra practice → recall the Spanish yourself.
     /// </summary>
-    private bool EnglishFirstFor(CardState? s)
+    private CardMode ModeFor(CardState? s)
     {
-        if (onExtra && progress.PracticeDirection == "en") return true;
-        if (onExtra && progress.PracticeDirection == "es") return false;
-        return Srs.AsksForSpanish(s);
+        if (onExtra) return CardMode.Recall;
+        if (Srs.IsNew(s)) return CardMode.Intro;
+        if (s!.Phase == CardPhase.Learning)
+            return s.Step <= 1 ? CardMode.PickEnglish : s.Step == 2 ? CardMode.PickSpanish : CardMode.Recall;
+        return CardMode.Recall; // reviews and relearning: recall the Spanish yourself
     }
 
     /// <summary>
-    /// Multiple choice on the early levels: new / level 1 (Spanish shown) → pick the English meaning;
-    /// level 2 (English + blanked sentence shown) → pick the Spanish word. From level 3 you recall it yourself.
+    /// Which side a card shows first. Picking the English shows the Spanish; everything else shows the
+    /// English and asks for the Spanish (the harder, more useful direction). Extra practice can show the
+    /// Spanish first instead (Settings → Extra practice).
     /// </summary>
-    private static ChoiceKind ChoiceKindFor(CardState? s, bool englishFirst)
+    private bool EnglishFirstFor(CardState? s)
     {
-        var level = s?.Box ?? 0;
-        if (!englishFirst && level <= 1) return ChoiceKind.English;
-        if (englishFirst && level == Srs.RecallLevel) return ChoiceKind.Spanish;
-        return ChoiceKind.None;
+        if (onExtra) return progress.PracticeDirection != "es";
+        return ModeFor(s) is CardMode.PickSpanish or CardMode.Recall;
+    }
+
+    private ChoiceKind ChoiceKindFor(CardState? s) => ModeFor(s) switch
+    {
+        CardMode.PickEnglish => ChoiceKind.English,
+        CardMode.PickSpanish => ChoiceKind.Spanish,
+        _ => ChoiceKind.None,
+    };
+
+    /// <summary>The conjugation box on the answer side of a verb card.</summary>
+    private RenderFragment ConjugationBox(Word card) => b =>
+    {
+        if (card.Conjugation is null) return;
+        var cj = card.ConjugationParts;
+        b.OpenElement(0, "div");
+        b.AddAttribute(1, "class", "conj");
+        b.OpenElement(2, "div");
+        b.OpenElement(3, "span");
+        b.AddAttribute(4, "class", "conj-label");
+        b.AddContent(5, "Present");
+        b.CloseElement();
+        b.AddContent(6, " " + cj.Present);
+        b.CloseElement();
+        if (cj.Past is not null)
+        {
+            b.OpenElement(7, "div");
+            b.OpenElement(8, "span");
+            b.AddAttribute(9, "class", "conj-label");
+            b.AddContent(10, "Past");
+            b.CloseElement();
+            b.AddContent(11, " " + cj.Past);
+            b.CloseElement();
+        }
+        b.CloseElement();
+    };
+
+    /// <summary>Under the options once you've picked: what happens next.</summary>
+    private string ChoiceOutcome(Word card)
+    {
+        if (picked?.Es != card.Es) return "It comes back in a minute to try again.";
+        if (pickedSlow) return "Right, but slow: one more try in a minute.";
+        var s = State(card);
+        if (s?.Phase == CardPhase.Learning && s.Step <= 1) return "Next: pick the Spanish for it, in a few minutes.";
+        return "Next: recall the Spanish yourself, in about ten minutes.";
+    }
+
+    /// <summary>Under the grade buttons: what each one does to this word.</summary>
+    private string GradeHint(CardState? s)
+    {
+        if (s is { Phase: CardPhase.Learning }) return "Got it: first review tomorrow · Hard or Forgot: again in a minute";
+        if (!onExtra && IsCheckIn(s)) return "Got it or Hard: first review tomorrow, as planned · Forgot: practise it again in a minute";
+        if (s is { Phase: CardPhase.Relearning })
+        {
+            var back = Srs.Step(s, Rating.Good, DateTime.UtcNow, today);
+            return $"Got it: back in {Srs.GapText(back.Interval)} · Hard or Forgot: again in a minute";
+        }
+        if (s is null || !Srs.IsDue(s, today)) return "Extra practice: Forgot brings it back to learn again; the others change nothing.";
+        var good = Srs.Review(s, Rating.Good, DateTime.UtcNow, today);
+        var hard = Srs.Review(s, Rating.Hard, DateTime.UtcNow, today);
+        return $"Hard: back in {Srs.GapText(hard!.Interval)} · Got it: back in {Srs.GapText(good!.Interval)}";
     }
 
     /// <summary>Builds the 6 options once per card (so they don't reshuffle while you look at them).</summary>
     private void EnsureChoices(Word card, ChoiceKind kind, CardState? s)
     {
-        var key = $"{card.Es}|{kind}|{s?.Box ?? 0}|{s?.LastSeen?.Ticks ?? 0}";
+        var key = $"{card.Es}|{kind}|{s?.Phase}|{s?.Step}|{s?.LastSeen?.Ticks ?? 0}";
         if (key == choiceKey) return;
         choiceKey = key;
         picked = null;
@@ -874,15 +1239,27 @@ else
         return SaveProgress();
     }
 
-    private void Flip() => flipped = !flipped;
+    /// <summary>Show the answer (recall cards). The time it took counts for the answer timer.</summary>
+    private async Task Reveal(bool answerInSpanish)
+    {
+        if (flipped) return;
+        revealSlow = await IsSlow(answerInSpanish);
+        flipped = true;
+    }
 
     private void ResetCardView()
     {
         flipped = false;
         picked = null;
         pendingNext = null;
+        pendingRating = null;
         pickedSlow = false;
+        revealSlow = false;
         choiceKey = null;
+        typedText = "";
+        typedResult = null;
+        typedOverride = false;
+        typedSlow = false;
     }
 
     private void SetTab(Tab t)
@@ -890,11 +1267,33 @@ else
         timedCardKey = null; // coming back to Cards restarts the timer
         tab = t;
         confirmReset = false;
-        flipped = false;
+        if (t == Tab.Settings) _ = LoadHistory();
+        // The card on screen (and a pick you haven't confirmed yet) is kept for when you come back.
+    }
+
+    /// <summary>Today's new-word goal is reached (and you haven't asked for more): Cards stops offering new words.</summary>
+    private bool NewGoalMet =>
+        progress.DailyNewLimit > 0 && progress.NewDoneToday >= progress.DailyNewLimit && moreNewOn != Srs.Today;
+
+    private string NewTodayText =>
+        progress.DailyNewLimit <= 0 ? $"{progress.NewDoneToday} new today"
+        : moreNewOn == Srs.Today ? $"{progress.NewDoneToday} new today (goal {progress.DailyNewLimit})"
+        : $"{progress.NewDoneToday}/{progress.DailyNewLimit} new today";
+
+    /// <summary>"Learn more new words" after the goal: new words come back for the rest of today.</summary>
+    private void LearnMoreNew()
+    {
+        currentId = null;
+        moreNewOn = Srs.Today;
+        keepGoing = false;
+        practiceIdx = 0;
+        ResetCardView();
+        notice = null;
     }
 
     private void KeepGoing()
     {
+        currentId = null;
         keepGoing = true;
         practiceIdx = 0;
         ResetCardView();
@@ -903,6 +1302,7 @@ else
 
     private async Task OnGroupChanged()
     {
+        currentId = null;
         practiceIdx = 0;
         keepGoing = false;
         ResetCardView();
@@ -924,37 +1324,229 @@ else
         if (onExtra) practiceIdx++;
         else skipped.Add(card.Es);
         lastAnswered = card.Es;
+        currentId = null;
+        answerCount++;
         ResetCardView();
         notice = null;
     }
 
+    /// <summary>A learning step (multiple choice): work out the result now; Continue saves it.</summary>
     private async Task Choose(Word option, Word card, ChoiceKind kind)
     {
         var slow = await IsSlow(kind == ChoiceKind.Spanish);
         picked = option;
         flipped = true; // show the full answer side
         today = Srs.Today;
-        pickedSlow = option == card && slow && Srs.Counts(State(card), today);
-        // Work out the result now; Continue saves it.
-        pendingNext = option != card ? Srs.Forgot(State(card), today)
-            : pickedSlow ? Srs.Slow(State(card), today)
-            : Srs.Know(State(card), today, LoadByDay());
+        var before = State(card);
+        var right = option.Es == card.Es;
+        pickedSlow = right && slow;
+        pendingRating = Srs.StepRating(right, slow);
+        pendingNext = before is null ? null : Srs.Step(before, pendingRating.Value, DateTime.UtcNow, today, LoadByDay());
     }
 
     private async Task ContinueAfterChoice(Word card)
     {
-        var before = State(card);
-        CountReview(before);
-        if (pendingNext is not null) progress.Cards[card.Es] = pendingNext;
+        if (pendingNext is not null)
+        {
+            var before = State(card);
+            var kind = before is { Step: >= 2 } ? ReviewKind.PickSpanish : ReviewKind.PickEnglish;
+            _ = Log(card.Es, kind, before, pendingNext, pendingRating ?? Rating.Good);
+            progress.Cards[card.Es] = pendingNext;
+        }
         notice = null;
         AfterAnswer(card);
         await Store.SaveAsync(progress);
     }
 
-    /// <summary>Counts a review toward today's required reviews when the card was due.</summary>
+    /// <summary>"Got it" on a new word: it's introduced, and the first step comes up a minute later.</summary>
+    private async Task MeetWord(Word card)
+    {
+        EnsureReviewDay();
+        progress.NewDoneToday++;
+        var met = Srs.Introduce(DateTime.UtcNow);
+        _ = Log(card.Es, ReviewKind.Intro, State(card), met);
+        progress.Cards[card.Es] = met;
+        notice = null;
+        AfterAnswer(card);
+        await Store.SaveAsync(progress);
+    }
+
+    /// <summary>"I already know it" on a new word: no steps, a first review in a few days (doesn't count as a new word).</summary>
+    private async Task AlreadyKnowIt(Word card)
+    {
+        today = Srs.Today;
+        var next = Srs.AlreadyKnown(today, LoadByDay());
+        lastAnswerMs = 0; // not timed
+        _ = Log(card.Es, ReviewKind.Known, State(card), next, fsrsRating: 4);
+        progress.Cards[card.Es] = next;
+        ShowNotice($"First review in {Srs.GapText(next.Due.DayNumber - today.DayNumber)}");
+        AfterAnswer(card);
+        await Store.SaveAsync(progress);
+    }
+
+    /// <summary>
+    /// What a recall answer does to a word. Learning and relearning steps: Got it moves on, Hard or Forgot
+    /// repeats the step a minute later. Reviews: Forgot / Hard / Got it, and a slow Got it counts as Hard.
+    /// </summary>
+    private CardState? NextAfterRecall(CardState before, Rating rating, bool slow, out bool slowHard) =>
+        NextAfterRecall(before, rating, slow, out slowHard, out _);
+
+    /// <param name="used">The rating that was applied (a slow Got it counts as Hard).</param>
+    private CardState? NextAfterRecall(CardState before, Rating rating, bool slow, out bool slowHard, out Rating used)
+    {
+        var now = DateTime.UtcNow;
+        var slowGood = rating == Rating.Good && slow;
+        if (Srs.IsLearning(before))
+        {
+            // A slow right answer repeats the step (the message says "again in a minute").
+            slowHard = false;
+            used = slowGood ? Rating.Hard : rating;
+            return Srs.Step(before, used, now, today, LoadByDay());
+        }
+        if (!onExtra && IsCheckIn(before))
+        {
+            // The check-in asks whether it stuck: Hard (a slip, or slow) still counts as remembered.
+            slowHard = slowGood;
+            used = slowGood ? Rating.Hard : rating;
+            return Srs.CheckInAnswer(before, used, now, today);
+        }
+        slowHard = slowGood && Srs.IsDue(before, today);
+        used = slowHard ? Rating.Hard : rating;
+        return Srs.Review(before, used, now, today, LoadByDay());
+    }
+
+    /// <summary>Applies a recall answer (graded by you, or checked when you type), then moves to the next card.</summary>
+    private async Task ApplyRecall(Word card, Rating rating, bool slow, string? check = null)
+    {
+        today = Srs.Today;
+        var before = State(card);
+        if (before is null) return;
+        var kind = onExtra ? ReviewKind.Extra
+            : IsCheckIn(before) ? ReviewKind.CheckIn
+            : before.Phase == CardPhase.Learning ? ReviewKind.Recall
+            : before.Phase == CardPhase.Relearning ? ReviewKind.Relearn
+            : Srs.IsDue(before, today) ? ReviewKind.Review
+            : ReviewKind.Extra;
+        var next = NextAfterRecall(before, rating, slow, out var slowHard, out var used);
+        _ = Log(card.Es, kind, before, next, used, check: check);
+        if (!Srs.IsLearning(before)) CountReview(before);
+        if (next is not null) progress.Cards[card.Es] = next;
+        notice = null;
+        var text = OutcomeText(before, next, slowHard);
+        if (next is not null && text.Length > 0) ShowNotice(text, slowHard);
+        AfterAnswer(card);
+        await Store.SaveAsync(progress);
+    }
+
+    /// <summary>"Next review in 8 days", "Again in a minute"… (empty when nothing changes).</summary>
+    private string OutcomeText(CardState before, CardState? next, bool slowHard)
+    {
+        if (next is null) return "";
+        if (next.Phase == CardPhase.Relearning) return "It comes back in a few minutes to recall again";
+        if (next.Phase == CardPhase.Learning) return "Again in a minute";
+        var days = next.Due.DayNumber - today.DayNumber;
+        if (before.Phase == CardPhase.Learning)
+            return next.CheckIn is not null && progress.CheckIns
+                ? "Learned! Quick check-in later today, first review tomorrow"
+                : "Learned for today: first review tomorrow";
+        if (!onExtra && IsCheckIn(before) && next.Phase == CardPhase.Review)
+            return "Still there! First review tomorrow";
+        return $"Next review in {Srs.GapText(days)}";
+    }
+
+    // ----- typing the Spanish -----
+
+    private static readonly string[] AccentKeys = ["á", "é", "í", "ó", "ú", "ñ", "ü"];
+
+    private string typedText = "";
+    private WordCheckResult? typedResult;
+    private bool typedOverride;   // "Count it as right"
+    private bool typedSlow;
+    private string? focusFor;     // the card whose answer box was focused
+
+    private async Task TypedKey(KeyboardEventArgs e, Word card)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(typedText)) await CheckTyped(card);
+    }
+
+    private async Task AddLetter(string c)
+    {
+        typedText += c;
+        try { await JS.InvokeVoidAsync("palabras.focusById", "word-answer"); }
+        catch (Exception) { }
+    }
+
+    private async Task CheckTyped(Word card)
+    {
+        if (flipped) return;
+        typedSlow = await IsSlow(true, factor: 2); // typing takes longer than saying it
+        typedResult = WordCheck.Check(typedText, card, listSpellings);
+        typedOverride = false;
+        flipped = true;
+        focusFor = "continue";
+    }
+
+    private async Task DontKnow(Word card)
+    {
+        await IsSlow(true); // only to note the time taken
+        typedText = "";
+        typedResult = WordCheckResult.Wrong;
+        typedOverride = false;
+        flipped = true;
+        focusFor = "continue";
+    }
+
+    /// <summary>
+    /// Right, or right but for a missing accent → Got it (slow → Hard); the wrong article or a one-letter slip →
+    /// Hard; wrong → Forgot. A missing accent doesn't hold the word back: you remembered it, and the message
+    /// shows the right spelling.
+    /// </summary>
+    private Rating TypedRating() => typedOverride ? Rating.Good : typedResult switch
+    {
+        WordCheckResult.Right or WordCheckResult.Accent => Rating.Good,
+        WordCheckResult.Article or WordCheckResult.Almost => Rating.Hard,
+        _ => Rating.Forgot,
+    };
+
+    private Task ContinueTyped(Word card) =>
+        ApplyRecall(card, TypedRating(), typedSlow && !typedOverride,
+                    typedOverride ? "override" : typedResult?.ToString().ToLowerInvariant());
+
+    private string TypedMessage(Word card)
+    {
+        var answer = card.SpanishWithArticle;
+        var you = typedText.Trim();
+        if (typedOverride) return $"Counted as right: {answer}";
+        return typedResult switch
+        {
+            WordCheckResult.Right => $"Right! {answer}",
+            WordCheckResult.Accent => $"Almost: watch the accent. It's {answer} (you wrote {you})",
+            WordCheckResult.Article => $"Right word, wrong article: it's {answer}",
+            WordCheckResult.Almost => $"Almost: it's {answer} (you wrote {you})",
+            _ => you.Length == 0 ? $"It's {answer}" : $"Not quite: it's {answer} (you wrote {you})",
+        };
+    }
+
+    /// <summary>Under Continue: what will happen to the word.</summary>
+    private string TypedOutcome(CardState? s)
+    {
+        if (s is null) return "";
+        var next = NextAfterRecall(s, TypedRating(), typedSlow && !typedOverride, out var slowHard);
+        if (next is null) return "Extra practice: nothing changes.";
+        var text = OutcomeText(s, next, slowHard);
+        return slowHard ? $"Right, but slow, so it counts as Hard. {text}." : $"{text}.";
+    }
+
+    private void ShowNotice(string text, bool slow = false)
+    {
+        notice = slow ? $"A bit slow, counted as Hard · {text.ToLowerInvariant()}" : text;
+        noticeSlow = slow;
+    }
+
+    /// <summary>Counts a due review toward today's required reviews, once per word per day.</summary>
     private void CountReview(CardState? before)
     {
-        if (!Srs.IsDue(before, today)) return;
+        if (!Srs.IsDue(before, today) || Srs.ReviewedToday(before, today)) return;
         EnsureReviewDay();
         progress.ReviewsDoneToday++;
     }
@@ -963,41 +1555,17 @@ else
     /// True when the answer took longer than the limit (set in Settings: 4 s for English answers and 6 s for Spanish by default).
     /// Time while the app is in the background doesn't count.
     /// </summary>
-    private async Task<bool> IsSlow(bool answerInSpanish)
+    private async Task<bool> IsSlow(bool answerInSpanish, double factor = 1)
     {
         try
         {
-            var limit = answerInSpanish ? progress.SpanishAnswerSeconds : progress.EnglishAnswerSeconds;
-            if (limit <= 0) return false; // timer off
             var ms = await JS.InvokeAsync<double>("palabras.timerElapsed");
+            lastAnswerMs = (int)Math.Min(ms, int.MaxValue);
+            var limit = (answerInSpanish ? progress.SpanishAnswerSeconds : progress.EnglishAnswerSeconds) * factor;
+            if (limit <= 0) return false; // timer off
             return ms > limit * 1000;
         }
-        catch (Exception) { return false; } // no timer: never punish
-    }
-
-    private async Task AnswerKnow(Word card)
-    {
-        var slow = await IsSlow(EnglishFirstFor(State(card)));
-        today = Srs.Today;
-        var before = State(card);
-        var counts = Srs.Counts(before, today);
-        var next = slow && counts ? Srs.Slow(before, today) : Srs.Know(before, today, LoadByDay());
-        CountReview(before);
-        if (next is not null) progress.Cards[card.Es] = next;
-        notice = slow && counts ? "slow" : null; // just a small clock icon, no text
-        AfterAnswer(card);
-        await Store.SaveAsync(progress);
-    }
-
-    private async Task AnswerForgot(Word card)
-    {
-        today = Srs.Today;
-        var before = State(card);
-        CountReview(before);
-        progress.Cards[card.Es] = Srs.Forgot(before, today);
-        notice = null;
-        AfterAnswer(card);
-        await Store.SaveAsync(progress);
+        catch (Exception) { lastAnswerMs = 0; return false; } // no timer: never punish
     }
 
     /// <summary>Hide the feedback message after a couple of seconds so it doesn't cover the next card.</summary>
@@ -1030,19 +1598,24 @@ else
     {
         if (notice is not null) HideNoticeSoon();
         lastAnswered = card.Es;
+        currentId = null;
+        waitSkipped = null;
+        answerCount++;
         skipped.Remove(card.Es);
         ResetCardView();
-        // A word you got wrong leaves extra practice (it's due again), so the next word slides into its spot.
-        if (onExtra && !Srs.IsDue(State(card), today)) practiceIdx++;
+        // A word you forgot leaves extra practice (it's relearning now), so the next word slides into its spot.
+        if (onExtra && State(card) is { Phase: CardPhase.Review }) practiceIdx++;
     }
 
     private async Task Move(Word w, bool fromLearned)
     {
         today = Srs.Today;
-        // Relearn on a word you only marked as known (never learned it here): back to New, not counted as
-        // forgetting it. A word learned through reviews goes back to practice (Srs.Forgot).
-        if (fromLearned && Srs.IsRetired(State(w))) progress.Cards.Remove(w.Es);
-        else progress.Cards[w.Es] = fromLearned ? Srs.Forgot(State(w), today) : Srs.MarkLearned(today);
+        // Relearn on a word you only marked as known (never learned it here): back to New. A word learned
+        // through reviews goes back to the first learning step. Neither counts as forgetting it.
+        var before = State(w);
+        if (fromLearned && Srs.IsRetired(before)) progress.Cards.Remove(w.Es);
+        else progress.Cards[w.Es] = fromLearned ? Srs.Relearn(before, DateTime.UtcNow) : Srs.MarkLearned(today);
+        _ = Log(w.Es, fromLearned ? ReviewKind.BackToLearn : ReviewKind.MarkLearned, before, State(w));
         await Store.SaveAsync(progress);
     }
 
@@ -1052,11 +1625,110 @@ else
         catch (Exception) { /* speech not available */ }
     }
 
+    // ----- review history and schedule settings -----
+
+    /// <summary>
+    /// Saves one answer to the review history. The entry is made straight away (before the card changes), and
+    /// saving runs in the background: it never fails, and the history isn't needed to study.
+    /// </summary>
+    /// <param name="rating">The rating applied; <paramref name="fsrsRating"/> instead for "I already know it" (4 = easy).</param>
+    private Task Log(string word, string kind, CardState? before, CardState? after, Rating? rating = null,
+                     int fsrsRating = 0, string? check = null)
+    {
+        var r = rating is { } x ? Srs.FsrsRating(x) : fsrsRating;
+        var mem = after ?? before;
+        var last = before?.RatedOn ?? before?.LastReview;
+        var entry = new ReviewEntry
+        {
+            W = word,
+            T = ReviewHistory.Now(),
+            K = kind,
+            R = r,
+            // FSRS states: 0 = the word's first rated answer (no memory yet), else its phase before the answer.
+            P = before is null || (!Srs.HasMemory(before) && before.Phase is CardPhase.New or CardPhase.Learning) ? 0 : (int)before.Phase,
+            E = last is { } d && before!.Phase != CardPhase.New ? Math.Max(0, today.DayNumber - d.DayNumber) : -1,
+            I = before is { Phase: CardPhase.Review, Retired: false } ? before.Interval : 0,
+            N = mem is { Phase: CardPhase.Review or CardPhase.Relearning, Retired: false } ? mem.Interval : 0,
+            S = Math.Round(mem?.Stability ?? 0, 4),
+            D = Math.Round(mem?.Difficulty ?? 0, 4),
+            Ms = r > 0 ? lastAnswerMs : 0,
+            C = check,
+        };
+        history?.Add(entry);
+        return Store.LogAsync(entry);
+    }
+
+    private async Task LoadHistory()
+    {
+        if (paramsText.Length == 0 && progress.FsrsParameters is { } mine) paramsText = Fsrs.Format(mine);
+        history = await Store.ReadLogAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string Pct(double x) => $"{Math.Round(x * 100):0}%";
+
+    /// <summary>The average chance of remembering the words in reviews today (null when there are none).</summary>
+    private double? RecallNow()
+    {
+        var chances = progress.Cards.Values.Select(c => Srs.Recall(c, today)).OfType<double>().ToList();
+        return chances.Count == 0 ? null : chances.Average();
+    }
+
+    private int RetentionPercent
+    {
+        get => (int)Math.Round(progress.Retention * 100);
+        set => progress.Retention = Math.Clamp(value, 70, 97) / 100.0;
+    }
+
+    private Task RetentionChanged()
+    {
+        Fsrs.Configure(progress.FsrsParameters, progress.Retention);
+        return SaveProgress();
+    }
+
+    private async Task ApplyParameters()
+    {
+        if (!Fsrs.TryParse(paramsText, out var p, out var error))
+        {
+            paramsMessage = $"Not changed: {error}";
+            paramsError = true;
+            return;
+        }
+        progress.FsrsParameters = p;
+        Fsrs.Configure(progress.FsrsParameters, progress.Retention);
+        paramsText = Fsrs.Format(p);
+        paramsMessage = "Now using your own settings. They apply from each word's next answer.";
+        paramsError = false;
+        await SaveProgress();
+    }
+
+    private async Task StandardParameters()
+    {
+        progress.FsrsParameters = null;
+        Fsrs.Configure(null, progress.Retention);
+        paramsText = "";
+        paramsMessage = "Back to the standard settings.";
+        paramsError = false;
+        await SaveProgress();
+    }
+
+    private async Task ExportHistoryCsv()
+    {
+        var log = await Store.ReadLogAsync();
+        var csv = ReviewHistory.ToCsv(log, out var rows);
+        await JS.InvokeVoidAsync("palabras.downloadText", $"palabras-history-{DateTime.Now:yyyy-MM-dd}.csv", "text/csv;charset=utf-8", csv);
+        paramsMessage = $"Downloaded {rows:N0} answers.";
+        paramsError = false;
+    }
+
     // ----- export / import -----
 
     private async Task ExportJson()
     {
-        var json = ProgressTransfer.ToJson(words!, progress.Cards, progress.VerbSkills, progress.VerbTests, progress.Texts, progress.MyWords);
+        var log = await Store.ReadLogAsync();
+        var scheduler = new ExportScheduler { Retention = progress.Retention, Parameters = progress.FsrsParameters };
+        var json = ProgressTransfer.ToJson(words!, progress.Cards, progress.VerbSkills, progress.VerbTests, progress.Texts,
+                                           progress.MyWords, scheduler, log);
         await JS.InvokeVoidAsync("palabras.downloadText", $"palabras-progress-{DateTime.Now:yyyy-MM-dd}.json", "application/json", json);
         var verbForms = progress.VerbSkills.Values.Count(VerbSrs.IsSeen);
         ShowTransfer($"Exported {LearnedCount} learned and {words!.Count - LearnedCount} not-yet-learned words, and {verbForms} practised verb forms.");
@@ -1073,7 +1745,7 @@ else
     {
         try
         {
-            await using var stream = e.File.OpenReadStream(maxAllowedSize: 2_000_000);
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 60_000_000);
             using var reader = new StreamReader(stream);
             var text = await reader.ReadToEndAsync();
 
@@ -1091,12 +1763,30 @@ else
                 progress.VerbSkills = result.VerbSkills;
                 progress.VerbTests = result.VerbTests ?? new();
             }
+            // The schedule settings and the review history (Export JSON from October 2026).
+            var (scheduler, importedLog) = ProgressTransfer.ReadHistory(text, e.File.Name);
+            if (scheduler is not null)
+            {
+                progress.Retention = scheduler.Retention is >= 0.7 and <= 0.97 ? scheduler.Retention : Fsrs.DefaultRetention;
+                progress.FsrsParameters = scheduler.Parameters is { } sp && Fsrs.Validate(sp) is null ? sp : null;
+                Fsrs.Configure(progress.FsrsParameters, progress.Retention);
+                paramsText = progress.FsrsParameters is { } mine ? Fsrs.Format(mine) : "";
+            }
+            var historyNote = "";
+            if (importedLog is not null)
+            {
+                historyNote = await Store.ReplaceLogAsync(importedLog)
+                    ? $" Review history: {importedLog.Count:N0} answers."
+                    : " The review history couldn't be saved in this browser.";
+                history = importedLog;
+            }
             practiceIdx = 0;
+            currentId = null;
             ResetCardView();
             skipped.Clear();
             await Store.SaveAsync(progress);
 
-            var msg = $"Imported {result.Learned} learned and {result.Learning} still-learning words from {e.File.Name}.";
+            var msg = $"Imported {result.Learned} learned and {result.Learning} still-learning words from {e.File.Name}.{historyNote}";
             if (result.Unknown > 0) msg += $" {result.Unknown} words weren't in the app's list and were skipped.";
             msg += result.VerbSkills is null
                 ? " The file has no verb progress, so your verb progress on this device was kept."
@@ -1117,12 +1807,16 @@ else
 
     private async Task Reset()
     {
+        currentId = null;
         progress.Cards = new();
         progress.VerbSkills = new();
         progress.VerbRotation = new();
         progress.VerbTests = new();
         progress.Order = null;
         progress.ReviewsDoneToday = 0;
+        progress.NewDoneToday = 0;
+        await Store.ClearLogAsync();
+        history = new();
         practiceIdx = 0;
         keepGoing = false;
         ResetCardView();

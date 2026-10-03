@@ -13,7 +13,7 @@ public sealed class SavedText
 }
 
 /// <summary>
-/// A word you added from a text that isn't in the app's 1,000-word list (meaning from the dictionary, or
+/// A word you added from a text that isn't in the app's word list (meaning from the dictionary, or
 /// your own). It becomes a normal card, in the "My words" topic.
 /// </summary>
 public sealed class MyWord

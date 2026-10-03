@@ -1,6 +1,6 @@
 # Palabras: Spanish flashcards (Blazor WebAssembly)
 
-Learn 1,000 common Spanish words as flashcards, and Spanish verb conjugation. The **Words** tab lists the words in a group, filtered by *To learn*, *Learned* or *All*. Progress is saved in your browser (localStorage).
+Learn 2,000 common Spanish words as flashcards, and Spanish verb conjugation. The **Words** tab lists the words in a group, filtered by *To learn*, *Learned* or *All*. Progress is saved in your browser (localStorage).
 
 ## Run it
 
@@ -27,18 +27,30 @@ Upload the contents of `bin/Release/net10.0/publish/wwwroot` to any static host 
 
 ## How studying works
 
-- The **Cards** tab shows today's required reviews in the chosen group, then new words, then optional bonus reviews (due words over your daily limit). Tap **I know it** or **Still learning**.
-  - **Multiple choice on the early levels:** new and level-1 cards show the Spanish word; pick the English meaning from 6. Level-2 cards show the English and the sentence with the word blanked out; pick the Spanish word from 6. From level 3 you recall the word yourself.
-  - **Daily review limit** (Settings tab → *Daily reviews*, default 30): the most reviews you *have* to do each day. Anything over it is optional extra and rolls forward. New review dates are also spread over quieter days so reviews don't bunch up. You can still learn as many new words as you like.
+- The **Cards** tab shows, in the chosen group: learning steps that are due, then today's required reviews, then new words (up to your daily goal), then optional bonus reviews (due words over your daily limit). The schedule is in `Models/Srs.cs`.
+  - **A new word** first appears as an **introduction**: the Spanish with its article, the meaning, the example sentence with its translation and the sound. Tap **Got it** (or **I already know it**: no steps, rated Easy, a first review in 4 days, not counted as a new word).
+  - **Learning steps, the same session:** a minute later you pick the English meaning from 6; five minutes after that you see the English and the sentence with the word blanked, and pick the Spanish from 6; ten minutes after that you **recall the Spanish yourself** (no options), because producing the Spanish is what really shows you know it. A miss (or a slow right answer, or Hard on the recall) repeats that step a minute later. When only learning steps are left, Cards waits for the soonest (*Un momento…*, with **Show it now**) instead of asking a word again straight away. Each step answer also updates the word's memory (see below); after the three steps, the first review is always tomorrow.
+  - **Check-in later the same day:** about 4 hours after you finish learning a word, it comes back once for a quick recall of the Spanish (shown first in the queue, after due learning steps). Remember it (Got it or Hard, or a near miss when typing) and the first review stays tomorrow. Forget it and you redo the recall step a minute later. Words learned too late in the day (when 4 hours later would be past 11 pm) skip it, since the next morning's review comes after a night's sleep anyway. Check-ins don't count toward the review limit or the new-word goal, and when you're done for now Cards says when the next check-in is due. Settings → *Check-in later today* turns them off.
+  - **Reviews** always ask for the Spanish: you see the English and the blanked sentence and recall the word.
+    - **Type the Spanish** (Settings → *Answering in Spanish*, on by default): type it (accent buttons below the box, Enter to check) and the app checks it. The word or the form that fits the sentence counts (*hablar* or *Hablo*), with or without the article. Right, or right except for a missing accent or ñ → **Got it** (the message shows the right spelling: you remembered the word, so a slip on the accent doesn't hold it back); the wrong article (*el mano*) or a one-letter slip → **Hard**, with what was off; wrong or **I don't know it** → **Forgot**. **Count it as right** overrides the check (another word that fits, a typo you don't care about). The checker is `Models/WordCheck.cs`.
+    - With typing off: say the Spanish, tap **Show answer** and grade yourself **Forgot**, **Hard** or **Got it** (the buttons only appear after the answer; under them it says when each would bring the word back).
+    - **The schedule is FSRS** (FSRS-6, the memory model Anki uses; `Models/Fsrs.cs`, checked against the reference implementation `py-fsrs`). Each word has a **stability** (days until the chance of remembering it falls to 90%) and a **difficulty** (1 to 10). Every answer updates them: the first answer sets them, answers on the same day (learning steps, the check-in) use FSRS's short-term formula, answers on later days the long-term one, which takes into account how likely you were to remember it (a word you remember after a long or late gap grows more).
+    - The next review is planned for the day the chance of remembering falls to the **aim** (Settings → *How well you remember*, 90% by default; 85% or 95% also offered), then moved a day or so to a quieter day. With the standard parameters, a word you always get right comes back after 1 day, then about 7, 30 and 120 days (up to a year); a word you found hard at first goes about 1 → 2 → 7 → 19 → 49 days.
+    - **Hard** grows the gap less and raises the word's difficulty. A slow **Got it** (see the timer) counts as Hard.
+    - **Forgot** counts as a lapse, lowers the stability a lot and raises the difficulty, and gives one relearning step a few minutes later (recall the Spanish again); the word then comes back after the gap its new stability gives (usually 1 to 3 days).
+  - A word counts as **Learned** once its stability reaches 20 days (about three weeks; at the 90% aim that's a 20-day gap), or when marked as known. Stability doesn't depend on the aim, so changing the aim can't un-learn words; only forgetting one does. Learned words keep coming back, further apart each time.
+  - **Daily review limit** (Settings tab → *Daily reviews*, default 30): the most reviews you *have* to do each day, shortest gaps first. Anything over it is optional bonus and rolls forward. Each word counts once a day. New review dates are spread over quieter days so reviews don't bunch up.
+  - **New words a day** (Settings tab → *New words a day*, default 10; *No goal* turns it off): the line above the card shows how many new words you've started today (*3/10 new today*). Once you reach the goal and your required reviews are done, Cards shows *You're good for now* instead of more new words, with **Learn more new words** (new words come back for the rest of the day) and **Practise words I've seen** (extra practice). A new word counts when you tap Got it on its introduction.
+  - **The day starts at 4 am**, so a late-night session belongs to the evening it started in.
   - **Tricky words:** words you forget repeatedly (2+ times) get a *tricky* badge and their own group in the picker.
-  - **Answer timer:** a right answer only moves a word up if it's quick: by default 4 seconds when you answer in English and 6 seconds when you answer in Spanish (change or turn off in Settings → *Answer timer*) (for multiple choice until you tap an option, otherwise until you tap *I know it*). A slower right answer shows a small clock: the word keeps its level and comes back tomorrow (a new word comes back later today). It doesn't count as forgotten. Time with the app in the background doesn't count.
-  - Each time you remember a due card it moves up a level and comes back later: 1 day → 3 days → 1 week → 2 weeks → 1 month.
-  - A word counts as **Learned** at level 4 (you've remembered it on schedule for about two weeks).
-  - **Still learning** sends a card back to level 1; it comes up again the same day.
-- **Keep going:** when a group has nothing left that counts (no reviews, no new words), the Cards tab offers **Keep going** for extra practice with words you've already seen. Extra practice never moves a word up, so it can't count toward Learned. *Still learning* still sends a word back down. Settings → *Extra practice* picks which side those cards show first.
-- **Which way you answer depends on the level.** New and level-1 cards show the Spanish word; answer in English. From level 2 on, cards show the English and the Spanish example with the word blanked out; answer in Spanish. So a word only reaches **Learned** (level 4) after you've produced the Spanish on schedule.
-  - **Still learning** on a Spanish-answer card drops it to level 2 (you keep answering in Spanish); on an English-answer card it drops to level 1.
-- **Words** tab: one list with a *To learn / Learned / All* filter. **Mark learned** is for words you already know: the word counts as learned and **never comes back**. **Relearn** on a learned word brings it back (at level 2, answering in Spanish).
+  - **Answer timer** (Settings → *Answer timer*; by default 4 seconds when you answer in English and 6 in Spanish; can be turned off): runs until you pick an option, tap *Check* or tap *Show answer*. A slow right answer repeats a learning step, or counts as Hard in a review. Time with the app in the background doesn't count.
+- **Keep going:** when a group has nothing left that counts, the Cards tab offers **Keep going** for extra practice with words in reviews that aren't due. Hard and Got it change nothing there, so extra practice can't make a word look learned; **Forgot** still sends a word back to relearn. Settings → *Extra practice* picks which side those cards show first (by default the English, answering in Spanish).
+- **Words** tab: one list with a *To learn / Learned / All* filter. **Mark learned** is for words you already know: the word counts as learned and **never comes back**. **Relearn** on a learned word brings it back to the first learning step (a word that was only marked as known goes back to New).
+- **Progress from before October 2026** (levels 1 to 5) is converted the first time the app opens: marked-as-known words stay marked; other words keep their next review date with a matching gap (level 1 → 1 day, 2 → 3, 3 → 8, 4 → 20, 5 → 45, so learned words stay learned). Each gap then becomes the word's stability, and its ease a difficulty, the way Anki converts when you switch to FSRS. A copy of the old progress is kept in the browser under `palabras-flashcards-v1-before-new-schedule` (or `-before-fsrs` when converting from the ease-based schedule some test copies had). Old export files are converted the same way on import.
+- **Review history:** every answer on a word card (the word, when, the kind of answer, the rating, the gap, the memory after it, the time taken, and for typed answers what the check found) is saved in the browser's IndexedDB (`palabras-history`; `wwwroot/js/reviewlog.js`, `Models/ReviewLog.cs`). It isn't needed to study; it's for:
+  - **How well you remember** (Settings): the share of due reviews you remembered in the last 30 days, overall and by gap, against the aim; check-ins; and an estimate of how much of your review words you'd remember right now.
+  - **Fitting the schedule to you:** **Download history** saves the answers as the CSV an FSRS optimizer reads (`card_id, review_time, review_rating, review_state, review_duration`, plus the word and kind). After a few months, the 21 parameters an optimizer fits can be pasted into *Fit the schedule to you* (**Back to standard** undoes it).
+  - Export JSON includes the history and the schedule settings, and Import restores them. *Reset all progress* deletes the history too.
 - The speaker buttons read the word and sentence aloud with your device's Spanish voice (if it has one).
 - Nouns show their article with a colour: blue = masculine (el), pink = feminine (la), purple = either. Verbs show present (yo / tú / él) and past forms on the answer side.
 - Pick a group from the dropdown: frequency groups of 100, topics (food, travel, family…), or *Tricky words*.
@@ -74,7 +86,7 @@ Paste any Spanish text (up to 20,000 characters) and see how much of it you can 
 
 ## Verbs tab
 
-Conjugation practice, separate from the word cards. It covers every verb in `words.json` (222 verbs).
+Conjugation practice, separate from the word cards. It covers the 222 verbs among the first 1,000 words of `words.json`. Verbs in words 1001 to 2000 are word cards only (with a short conjugation line).
 
 - **Tree:** tense → type → group → verb. For example *Present → Stem-changing verbs → o → ue → poder*, or *Preterite → Irregular stems → u-stem*. When a type has only one group (like *Unique verbs*), the extra level is skipped.
 - **Top page:** an *Up next* card (reviews due first, otherwise the next tense in the learning order: start it, or keep going until its regular endings are at 60% and the tense at 20%, or it's mastered; after stage 3, the rare tenses in Decode). Below it the tenses in four folding stages: *Start here* (present, going to, preterite, imperfect), *Next* (present perfect, commands, present subjunctive, future), *Later* (conditional, imperfect subjunctive, pluperfect) and *Recognise only* (the four rare compound tenses). Stages 1 and 2 start open, later ones once you've started something in them. Dots show how often a tense is met (●●●● everyday to ● rare). Rows you haven't started say *Not started* instead of an empty bar. *Mistakes by person* is folded. Tenses in *Recognise only* lead with *Practise reading (Decode)*. Stages and frequencies are in `VerbGrammar.Tenses` (`VerbData.cs`).
@@ -107,14 +119,14 @@ Conjugation practice, separate from the word cards. It covers every verb in `wor
 
 ## Settings tab
 
-Daily review limit, answer timer, extra practice direction, verbs (*vosotros* on or off), backup/transfer (below), a voice test, a short how-it-works, and *Reset all progress* (tap twice to confirm).
+Daily review limit, new words a day, typing the Spanish, the same-day check-in, answer timer, how well you remember (with the aim and the schedule's parameters), extra practice direction, verbs (*vosotros* on or off), backup/transfer (below), a voice test, a short how-it-works, and *Reset all progress* (tap twice to confirm).
 
 ## Export and import your progress
 
 On the **Settings** tab, under *Backup and transfer*:
 
-- **Export JSON** saves three readable lists (`learned`, `stillLearning`, `notStarted`) plus each word's level and next review date. Use it for backups or for moving your progress to another browser or phone.
-- **Export CSV** saves the same data as a spreadsheet (`rank, spanish, english, part_of_speech, topic, status, level, next_review`), which opens in Excel or Google Sheets.
+- **Export JSON** saves three readable lists (`learned`, `stillLearning`, `notStarted`) plus each word's schedule (phase, gap, next review date, stability, difficulty, lapses), the schedule settings (`scheduler`) and the review history (`history`). Use it for backups or for moving your progress to another browser or phone.
+- **Export CSV** saves the same data as a spreadsheet (`rank, spanish, english, part_of_speech, topic, status, level, next_review, interval_days`; level is 0 to 5, how well it's known), which opens in Excel or Google Sheets.
 - **Import…** loads either kind of file and **replaces** your current progress. In a CSV, the `status` column can be `learned`, `still learning` or `not started` (`known` and `practicing` also work). Words that aren't in the app's list are skipped.
 
 ## Project layout
@@ -123,7 +135,9 @@ On the **Settings** tab, under *Backup and transfer*:
 |---|---|
 | `Pages/Home.razor` | The app shell: flashcards, lists, tab bar |
 | `Models/Word.cs` | Word model: gender, verb forms, topic, fill-in-the-blank |
-| `Models/Srs.cs` | The simple spaced-repetition schedule |
+| `Models/Srs.cs` | The word schedule: learning steps, check-in, reviews |
+| `Models/Fsrs.cs` | The FSRS-6 memory model the schedule uses |
+| `Models/ReviewLog.cs` | Review history entries, stats and the optimizer CSV |
 | `Components/SpanishWord.razor` | Spanish word with coloured article |
 | `Components/Games/` | Games area (`GamesHub.razor`) and games (`MatchRace.razor`) |
 | `Services/WordRepository.cs` | Loads `wwwroot/data/words.json` |
@@ -135,7 +149,7 @@ On the **Settings** tab, under *Backup and transfer*:
 | `Services/VerbRepository.cs` | Loads `wwwroot/data/verbs.json` and builds the tree |
 | `wwwroot/data/verbs.json` | Full conjugations for every verb (generated: `tools/verb-data/`) |
 | `wwwroot/data/stories.json` | One example story per tense (generated: `tools/stories/`) |
-| `wwwroot/data/words.json` | 1,000 words with example, topic, gender/article, verb forms |
+| `wwwroot/data/words.json` | 2,000 words with example, topic, gender/article, verb forms |
 | `wwwroot/css/app.css` | Styles (mobile-first) |
 
-To add or edit words, change `words.json`; order in the file is the rank.
+To add or edit words, change `words.json`; order in the file is the rank. Progress is saved by the Spanish word, so never change an existing word's `es` (fixing its meaning or example is fine). Words 1001 to 2000 were added with the tools and briefs in `tools/words/` (see its README).

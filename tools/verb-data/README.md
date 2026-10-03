@@ -1,6 +1,6 @@
 # Verb data
 
-`SpanishFlashcards/wwwroot/data/verbs.json` holds full conjugations for every verb in `words.json`. It is generated, not hand-edited.
+`SpanishFlashcards/wwwroot/data/verbs.json` holds full conjugations for every verb among the first 1000 words of `words.json` (222 verbs). It is generated, not hand-edited. Verbs in words 1001 and up are not in the Verbs tab; their word cards still show a short conjugation line (`conj` in `words.json`), made from the [verbecc](https://github.com/bretttolbert/verbecc) conjugation tables.
 
 ## Regenerate
 
@@ -8,7 +8,7 @@
 python3 tools/verb-data/gen.py SpanishFlashcards/wwwroot/data/words.json SpanishFlashcards/wwwroot/data/verbs.json
 ```
 
-`gen.py` builds each form from explicit rules (regular endings plus per-verb features: stem changes, irregular yo forms, irregular preterite and future stems, irregular participles, spelling changes). It also stores, for each form, *why* it differs from the plain pattern (`why`), which the app uses to build the Verbs tree. To add a verb, add it to `words.json`, then add it to the right feature lists in `gen.py` if it is irregular in any way.
+`gen.py` builds each form from explicit rules (regular endings plus per-verb features: stem changes, irregular yo forms, irregular preterite and future stems, irregular participles, spelling changes). It also stores, for each form, *why* it differs from the plain pattern (`why`), which the app uses to build the Verbs tree. To add a verb to the Verbs tab, put it among the first 1000 words of `words.json` (or raise `VERB_TAB_WORDS`), then add it to the right feature lists in `gen.py` if it is irregular in any way.
 
 Stored per verb: the simple tenses (`pres`, `pret`, `impf`, `fut`, `cond`, `subj`, `cmd`, `impsubj`) and the participle (`pp`). The app builds the compound tenses from haber + participle, and the *-se* imperfect subjunctive from the *-ra* form. `a|b` means both answers are accepted (the first is shown).
 
