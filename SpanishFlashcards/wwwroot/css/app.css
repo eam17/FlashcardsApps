@@ -1203,11 +1203,30 @@ p.dc-note { margin: 0; }
 .rd-song-by { margin: -4px 0 0; display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
 .rd-song-by svg { flex-shrink: 0; color: var(--accent); }
 
+/* Read: Claude's translation under each line, and its notes */
+.rd-text-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.translate-btn, .en-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.translate-btn { border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.translate-btn:disabled { opacity: .8; cursor: default; }
+.en-toggle { color: var(--muted); }
+.en-toggle.on { background: var(--accent-soft); border-color: #B9C7F7; color: var(--accent-ink); font-weight: 700; }
+.tr-spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--accent-soft); border-top-color: var(--accent); animation: mic-spin .8s linear infinite; }
+.tr-msg { margin: 0; font-size: 14px; color: #9A2A12; }
+.rd-en { display: block; margin: 1px 0 10px; font-family: var(--body); font-size: 14px; line-height: 1.4; color: var(--muted); font-style: italic; }
+.rd-notes { gap: 10px; }
+.rd-summary { margin: 0; font-size: 15px; }
+.rd-note-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.rd-note { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--chip-idle); }
+.rd-note:first-child { border-top: none; padding-top: 0; }
+.rd-note-es { font-family: var(--display); font-weight: 700; font-size: 16px; color: var(--accent-ink); }
+.rd-note-en { font-size: 14px; }
+
 /* Settings: the AudD key */
 .key-row { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
 .key-input { flex: 1; min-width: 180px; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; }
 .key-input:focus-visible { outline: 3px solid #F2B138; outline-offset: 2px; }
 .set-card a { color: var(--accent); font-weight: 700; }
+.set-card select.small-select { max-width: 100%; }
 .rd-h { margin: 4px 0 0; font-family: var(--display); font-weight: 800; font-size: 22px; }
 .rd-paste { width: 100%; min-height: 140px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; line-height: 1.5; resize: vertical; }
 .rd-title-input, .rd-own { width: 100%; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; }

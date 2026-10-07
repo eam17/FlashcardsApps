@@ -50,6 +50,13 @@ public sealed class Progress
     /// <summary>Songs sent to AudD from this device (to keep an eye on the 300 free ones).</summary>
     public int AuddUses { get; set; }
 
+    /// <summary>The Claude model that translates texts (Settings → Translation with Claude).</summary>
+    public string TranslateModel { get; set; } = ClaudeService.DefaultModel;
+
+    /// <summary>Translations made with Claude from this device, and roughly what they cost (US dollars).</summary>
+    public int ClaudeTranslations { get; set; }
+    public double ClaudeSpend { get; set; }
+
     /// <summary>New words a day before Cards says you're done for today (0 = no goal). You can always learn more.</summary>
     public int DailyNewLimit { get; set; } = 10;
 
@@ -174,24 +181,30 @@ public sealed class ProgressStore(IJSRuntime js)
         }
     }
 
-    // ---------- the AudD key (Settings → Song recognition) ----------
-    // Kept under its own key, outside the progress, so it never ends up in a backup or an export file.
+    // ---------- API keys (Settings → Song recognition, Translation with Claude) ----------
+    // Each kept under its own key, outside the progress, so it never ends up in a backup or an export file.
 
     private const string AuddKeyName = "palabras-audd-key";
+    private const string ClaudeKeyName = "palabras-claude-key";
 
-    public async Task<string?> GetAuddKeyAsync()
+    public Task<string?> GetAuddKeyAsync() => GetSecretAsync(AuddKeyName);
+    public Task<bool> SetAuddKeyAsync(string? key) => SetSecretAsync(AuddKeyName, key);
+    public Task<string?> GetClaudeKeyAsync() => GetSecretAsync(ClaudeKeyName);
+    public Task<bool> SetClaudeKeyAsync(string? key) => SetSecretAsync(ClaudeKeyName, key);
+
+    private async Task<string?> GetSecretAsync(string name)
     {
-        try { return await js.InvokeAsync<string?>("localStorage.getItem", AuddKeyName); }
+        try { return await js.InvokeAsync<string?>("localStorage.getItem", name); }
         catch (Exception) { return null; }
     }
 
-    /// <summary>Saves the key (empty removes it). False when the browser wouldn't store it.</summary>
-    public async Task<bool> SetAuddKeyAsync(string? key)
+    /// <summary>Saves a key (empty removes it). False when the browser wouldn't store it.</summary>
+    private async Task<bool> SetSecretAsync(string name, string? key)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(key)) await js.InvokeVoidAsync("localStorage.removeItem", AuddKeyName);
-            else await js.InvokeVoidAsync("localStorage.setItem", AuddKeyName, key.Trim());
+            if (string.IsNullOrWhiteSpace(key)) await js.InvokeVoidAsync("localStorage.removeItem", name);
+            else await js.InvokeVoidAsync("localStorage.setItem", name, key.Trim());
             return true;
         }
         catch (Exception) { return false; }

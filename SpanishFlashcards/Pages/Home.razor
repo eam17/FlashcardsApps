@@ -574,6 +574,33 @@ else
                         }
                     </section>
 
+                    <section class="set-card" id="set-claude">
+                        <h2><label for="claude-key">Translation with Claude</label></h2>
+                        <p>Texts and songs on the Read tab can be translated by Claude, line by line under the Spanish, with notes on slang, idioms and grammar. It needs your own Claude API key: make one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a> and add some credit there (it's billed separately from a Claude subscription, and new accounts get a little free credit). Setting a monthly spend limit there is a good idea. The key is kept only in this browser and only sent to Claude, never in backups or exports.</p>
+                        @if (claudeKeyEnd is not null)
+                        {
+                            <p class="small">@ClaudeUsageText</p>
+                        }
+                        <div class="key-row">
+                            <input id="claude-key" class="key-input" type="password" autocomplete="off" spellcheck="false"
+                                   placeholder="@(claudeKeyEnd is null ? "Paste your Claude API key" : "Paste a new key to replace it")" @bind="claudeKeyInput" @bind:event="oninput" />
+                            <button type="button" class="tool" disabled="@(string.IsNullOrWhiteSpace(claudeKeyInput))" @onclick="SaveClaudeKey">Save</button>
+                            @if (claudeKeyEnd is not null)
+                            {
+                                <button type="button" class="tool" @onclick="RemoveClaudeKey">Remove</button>
+                            }
+                        </div>
+                        @if (claudeMessage is not null)
+                        {
+                            <p class="backup-msg" role="status">@claudeMessage</p>
+                        }
+                        <h3><label for="claude-model">Model</label></h3>
+                        <select id="claude-model" class="small-select" @bind="progress.TranslateModel" @bind:after="SaveProgress">
+                            <option value="claude-haiku-5-5">Claude Haiku 5.5: about a tenth of a cent a song</option>
+                            <option value="claude-sonnet-5-5">Claude Sonnet 5.5: better with slang and wordplay, 1 to 3 cents a song</option>
+                        </select>
+                    </section>
+
                     <section class="set-card">
                         <h2>Pronunciation</h2>
                         @if (canSpeak)
@@ -620,7 +647,7 @@ else
             {
                 <ReadHub Words="words" StateOf="State" Progress="progress" OnChanged="ReadChanged" OnStudy="StudyGroup"
                          OnShowVerbs="() => SetTab(Tab.Verbs)" CanSpeak="canSpeak" Speak="Speak"
-                         OnOpenSettings="OpenSongSettings" />
+                         OnOpenSettings="OpenSettingsAt" />
             }
             else if (tab == Tab.Games)
             {
@@ -1700,9 +1727,52 @@ else
 
     private async Task LoadAuddKey()
     {
-        var key = await Store.GetAuddKeyAsync();
-        auddKeyEnd = string.IsNullOrWhiteSpace(key) ? null : key.Trim()[^Math.Min(4, key.Trim().Length)..];
+        progress.TranslateModel = ClaudeService.Resolve(progress.TranslateModel); // an old or unknown model id
+        auddKeyEnd = KeyEnd(await Store.GetAuddKeyAsync());
+        claudeKeyEnd = KeyEnd(await Store.GetClaudeKeyAsync());
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The last 4 characters of a key, to show which one is saved (null = none).</summary>
+    private static string? KeyEnd(string? key) =>
+        string.IsNullOrWhiteSpace(key) ? null : key.Trim()[^Math.Min(4, key.Trim().Length)..];
+
+    // ----- Claude key (Translation with Claude) -----
+
+    private string claudeKeyInput = "";
+    private string? claudeKeyEnd;
+    private string? claudeMessage;
+
+    private string ClaudeUsageText
+    {
+        get
+        {
+            var n = progress.ClaudeTranslations;
+            var spent = progress.ClaudeSpend < 0.01 ? "less than a cent" : $"about ${progress.ClaudeSpend:0.00}";
+            return n == 0
+                ? $"Key saved (ends in {claudeKeyEnd}). No translations yet."
+                : $"Key saved (ends in {claudeKeyEnd}). {n} {(n == 1 ? "translation" : "translations")} from this device, {spent} in all.";
+        }
+    }
+
+    private async Task SaveClaudeKey()
+    {
+        var key = claudeKeyInput.Trim();
+        if (key.Length == 0) return;
+        if (await Store.SetClaudeKeyAsync(key))
+        {
+            claudeKeyInput = "";
+            claudeMessage = "Saved. Open a text or song on the Read tab and tap Translate.";
+        }
+        else claudeMessage = "This browser wouldn't save the key (private browsing?).";
+        await LoadAuddKey();
+    }
+
+    private async Task RemoveClaudeKey()
+    {
+        await Store.SetClaudeKeyAsync(null);
+        claudeMessage = "Key removed from this browser.";
+        await LoadAuddKey();
     }
 
     private async Task SaveAuddKey()
@@ -1725,11 +1795,11 @@ else
         await LoadAuddKey();
     }
 
-    /// <summary>From the Read tab's song finder: Settings, scrolled to Song recognition.</summary>
-    private void OpenSongSettings()
+    /// <summary>From the Read tab: Settings, scrolled to a section (Song recognition, Translation with Claude).</summary>
+    private void OpenSettingsAt(string sectionId)
     {
         SetTab(Tab.Settings);
-        scrollTo = "set-songs";
+        scrollTo = sectionId;
     }
 
     private async Task LoadHistory()

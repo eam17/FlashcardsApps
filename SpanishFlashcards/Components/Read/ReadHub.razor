@@ -16,7 +16,7 @@
         <TextReader @key="text.Id" Text="text" Words="Words" StateOf="StateOf" Progress="Progress" Dict="dict" Book="book" Tree="tree"
                     DictError="dictError" CanSpeak="CanSpeak" Speak="Speak"
                     OnBack="() => openId = null" OnDelete="() => Delete(text)" OnChanged="OnChanged"
-                    OnStudy="OnStudy" OnShowVerbs="OnShowVerbs" />
+                    OnStudy="OnStudy" OnShowVerbs="OnShowVerbs" OnOpenSettings="OnOpenSettings" />
     }
     else
     {
@@ -60,7 +60,7 @@
                     @songMessage
                     @if (needsKey)
                     {
-                        <button type="button" class="link-btn" @onclick="OnOpenSettings">Add your key in Settings</button>
+                        <button type="button" class="link-btn" @onclick="@(() => OnOpenSettings.InvokeAsync("set-songs"))">Add your key in Settings</button>
                     }
                 </p>
             }
@@ -143,8 +143,8 @@
     [Parameter] public EventCallback OnShowVerbs { get; set; }
     [Parameter] public bool CanSpeak { get; set; }
     [Parameter] public Func<string, Task>? Speak { get; set; }
-    /// <summary>Go to Settings → Song recognition (to add the AudD key).</summary>
-    [Parameter] public EventCallback OnOpenSettings { get; set; }
+    /// <summary>Go to Settings, scrolled to a section ("set-songs": the AudD key, "set-claude": the Claude key).</summary>
+    [Parameter] public EventCallback<string> OnOpenSettings { get; set; }
 
     // The open text and the half-written new one, kept while the app is open.
     private static string? openId;

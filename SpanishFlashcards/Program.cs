@@ -13,5 +13,6 @@ builder.Services.AddScoped<VerbRepository>();
 builder.Services.AddScoped<DictionaryRepository>();
 builder.Services.AddScoped<ProgressStore>();
 builder.Services.AddScoped<SongService>();
+builder.Services.AddScoped<ClaudeService>();
 
 await builder.Build().RunAsync();

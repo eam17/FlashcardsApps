@@ -1,6 +1,8 @@
 @* One text in the Read tab: how much you can read, the words to learn first, the verb tenses it uses,
-   and the text itself (tap any word). *@
+   and the text itself (tap any word), with Claude's English translation under each line if you ask for it. *@
 @inject IJSRuntime JS
+@inject ClaudeService Claude
+@inject ProgressStore Store
 
 <div class="rd-reader">
     <button type="button" class="tool back-btn" @onclick="OnBack">
@@ -213,7 +215,39 @@
 
         <div class="rd-main">
         <section class="rd-card rd-text-card" aria-label="The text">
-            <h3 class="rd-h3">The text</h3>
+            <div class="rd-text-head">
+                <h3 class="rd-h3">@(Text.Song is null ? "The text" : "The lyrics")</h3>
+                @if (Text.Translation is not null)
+                {
+                    <button type="button" class="tool small en-toggle @(showEnglish ? "on" : "")" aria-pressed="@(showEnglish ? "true" : "false")"
+                            @onclick="() => showEnglish = !showEnglish">English</button>
+                }
+                else
+                {
+                    <button type="button" class="tool small translate-btn" disabled="@translating" @onclick="Translate">
+                        @if (translating)
+                        {
+                            <span class="tr-spin" aria-hidden="true"></span>
+                            <span>Translating…</span>
+                        }
+                        else
+                        {
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="m22 22-5-10-5 10" /><path d="M14 18h6" /></svg>
+                            <span>Translate</span>
+                        }
+                    </button>
+                }
+            </div>
+            @if (translateError is not null)
+            {
+                <p class="tr-msg" role="status">
+                    @translateError
+                    @if (translateKeyProblem)
+                    {
+                        <button type="button" class="link-btn" @onclick="@(() => OnOpenSettings.InvokeAsync("set-claude"))">Open Settings</button>
+                    }
+                </p>
+            }
             <div class="rd-key" aria-hidden="true">
                 <span class="rd-w k">known</span> <span class="rd-w l">learning</span> <span class="rd-w n">new</span> <span class="rd-w d">not in your list</span>
             </div>
@@ -229,11 +263,34 @@
                 @Info(a, a.Tokens[s], su)
             }
             <div class="rd-text" lang="es">
+                @{ var line = 0; }
                 @for (var i = 0; i < a.Tokens.Count; i++)
                 {
                     var idx = i;
                     var tok = a.Tokens[i];
-                    if (!tok.IsWord)
+                    if (!tok.IsWord && English is { } en && tok.Text.Contains('\n'))
+                    {
+                        // A line ends here: its English goes under it (in place of the line break).
+                        var parts = tok.Text.Split('\n');
+                        for (var p = 0; p < parts.Length; p++)
+                        {
+                            @(parts[p])
+                            if (p < parts.Length - 1)
+                            {
+                                var english = line < en.Count ? en[line] : "";
+                                line++;
+                                if (english.Length > 0)
+                                {
+                                    <span class="rd-en" lang="en">@english</span>
+                                }
+                                else
+                                {
+                                    @("\n")
+                                }
+                            }
+                        }
+                    }
+                    else if (!tok.IsWord)
                     {
                         @tok.Text
                     }
@@ -242,12 +299,55 @@
                         <span id="@($"rd-t-{idx}")" class="rd-w @Cls(tok) @(IsSelected(a, idx) ? "sel" : "") @(InOpenTense(a, idx) ? "tn" : "")" @onclick="() => Select(a, idx)">@tok.Text</span>
                     }
                 }
+                @if (English is { } lastEn && line < lastEn.Count && lastEn[line].Length > 0)
+                {
+                    @* The last line (no line break after it). *@
+                    <span class="rd-en" lang="en">@(lastEn[line])</span>
+                }
             </div>
             @if (Text.Study.Count > 0 || a.Units.Values.Any(u => u.InStudy))
             {
                 <p class="list-hint">Words you picked to study are underlined twice.</p>
             }
         </section>
+
+        @if (Text.Translation is { } tr)
+        {
+            <section class="rd-card rd-notes" aria-label="Notes">
+                <h3 class="rd-h3">@(Text.Song is null ? "About this text" : "About this song")</h3>
+                @if (tr.Summary.Length > 0)
+                {
+                    <p class="rd-summary">@tr.Summary</p>
+                }
+                @if (tr.Notes.Count > 0)
+                {
+                    <ul class="rd-note-list">
+                        @foreach (var n in tr.Notes)
+                        {
+                            <li class="rd-note">
+                                <span class="rd-note-es" lang="es">@n.Es</span>
+                                <span class="rd-note-en">@n.En</span>
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (translateError is not null)
+                {
+                    <p class="tr-msg" role="status">@translateError</p>
+                }
+                <p class="list-hint">
+                    @($"Translated by {ClaudeService.NameOf(tr.Model)}. It can make mistakes, especially with slang.")
+                    @if (confirmRetranslate)
+                    {
+                        <button type="button" class="link-btn" disabled="@translating" @onclick="Translate">@(translating ? "Translating…" : $"Yes, translate again with {ClaudeService.NameOf(ClaudeService.Resolve(Progress.TranslateModel))}")</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="link-btn" @onclick="() => confirmRetranslate = true">Translate again</button>
+                    }
+                </p>
+            </section>
+        }
 
         <p class="rd-credit">Meanings of words outside the app's list come from <a href="https://en.wiktionary.org" target="_blank" rel="noopener">Wiktionary</a> (CC BY-SA), via the <a href="https://github.com/doozan/spanish_data" target="_blank" rel="noopener">spanish_data</a> project.</p>
         </div>
@@ -271,6 +371,56 @@
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public EventCallback<string> OnStudy { get; set; }
     [Parameter] public EventCallback OnShowVerbs { get; set; }
+
+    /// <summary>Go to Settings, scrolled to a section ("set-claude": the Claude key).</summary>
+    [Parameter] public EventCallback<string> OnOpenSettings { get; set; }
+
+    // Translation with Claude
+    private static bool showEnglish = true;   // kept while the app is open
+    // Texts being translated, by id: kept across readers, so going back and reopening a text mid-translation
+    // doesn't offer (and pay for) a second request.
+    private static readonly HashSet<string> inFlight = new();
+    private bool translating => inFlight.Contains(Text.Id);
+    private bool confirmRetranslate;
+    private string? translateError;
+    private bool translateKeyProblem;
+
+    /// <summary>The English for each line, when there's a translation and it's switched on.</summary>
+    private List<string>? English => showEnglish && Text.Translation is { Lines.Count: > 0 } t ? t.Lines : null;
+
+    private async Task Translate()
+    {
+        if (translating) return;
+        translateError = null;
+        translateKeyProblem = false;
+        var key = await Store.GetClaudeKeyAsync();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            translateError = "To translate, add your Claude API key in Settings.";
+            translateKeyProblem = true;
+            return;
+        }
+        var text = Text;
+        inFlight.Add(text.Id);
+        StateHasChanged();
+        TranslateOutcome outcome;
+        try { outcome = await Claude.TranslateAsync(text, key, ClaudeService.Resolve(Progress.TranslateModel)); }
+        finally { inFlight.Remove(text.Id); }
+        confirmRetranslate = false;
+        Progress.ClaudeSpend += outcome.Cost;
+        if (outcome.Translation is { } t)
+        {
+            text.Translation = t;
+            Progress.ClaudeTranslations++;
+            showEnglish = true;
+        }
+        else
+        {
+            translateError = outcome.Error;
+            translateKeyProblem = outcome.KeyProblem;
+        }
+        await OnChanged.InvokeAsync(); // saves the translation (and the spend)
+    }
 
     /// <summary>Below this (strength in the Verbs tab) a tense is suggested to learn.</summary>
     private const int LearnBelow = 40;

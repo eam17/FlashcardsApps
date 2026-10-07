@@ -18,7 +18,7 @@ public sealed class LrcTrack
     /// <summary>The lyrics as plain text: the plain version, or the timed one without its times.</summary>
     [JsonIgnore]
     public string? Lyrics =>
-        !string.IsNullOrWhiteSpace(PlainLyrics) ? PlainLyrics.Trim()
+        !string.IsNullOrWhiteSpace(PlainLyrics) ? PlainLyrics.Replace("\r\n", "\n").Replace('\r', '\n').Trim()
         : !string.IsNullOrWhiteSpace(SyncedLyrics) ? Songs.StripTimes(SyncedLyrics)
         : null;
 

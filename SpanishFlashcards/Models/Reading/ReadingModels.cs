@@ -13,6 +13,36 @@ public sealed class SavedText
 
     /// <summary>Song lyrics found by search or by listening: where they came from (null for a pasted text).</summary>
     public SongInfo? Song { get; set; }
+
+    /// <summary>The English translation by Claude, line by line, with notes (null until you ask for one).</summary>
+    public TextTranslation? Translation { get; set; }
+}
+
+/// <summary>A text translated by Claude: one English line per line of the text, plus notes for a learner.</summary>
+public sealed class TextTranslation
+{
+    /// <summary>English for each line of the text, in order ("" for blank lines or lines without one).</summary>
+    public List<string> Lines { get; set; } = new();
+
+    /// <summary>Slang, idioms, cultural references and grammar worth noticing, tied to words in the text.</summary>
+    public List<TranslationNote> Notes { get; set; } = new();
+
+    /// <summary>What the text is about, in a sentence or two.</summary>
+    public string Summary { get; set; } = "";
+
+    /// <summary>The Claude model that made it (its API id).</summary>
+    public string Model { get; set; } = "";
+
+    public DateTime Made { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class TranslationNote
+{
+    /// <summary>The Spanish words from the text the note is about.</summary>
+    public string Es { get; set; } = "";
+
+    /// <summary>The explanation, in English.</summary>
+    public string En { get; set; } = "";
 }
 
 /// <summary>The song a text's lyrics belong to.</summary>
