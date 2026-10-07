@@ -552,6 +552,28 @@ else
                         }
                     </section>
 
+                    <section class="set-card" id="set-songs">
+                        <h2><label for="audd-key">Song recognition</label></h2>
+                        <p>The microphone on the Read tab uses AudD to tell which song is playing. It needs your own key: sign up at <a href="https://dashboard.audd.io" target="_blank" rel="noopener">dashboard.audd.io</a> (300 songs free, then about half a cent each) and paste the key here. It's kept only in this browser and only sent to AudD, never in backups or exports. Searching songs by name is free and needs no key.</p>
+                        @if (auddKeyEnd is not null)
+                        {
+                            <p class="small">@($"Key saved (ends in {auddKeyEnd}). {progress.AuddUses} {(progress.AuddUses == 1 ? "song" : "songs")} sent to AudD from this device.")</p>
+                        }
+                        <div class="key-row">
+                            <input id="audd-key" class="key-input" type="password" autocomplete="off" spellcheck="false"
+                                   placeholder="@(auddKeyEnd is null ? "Paste your AudD key" : "Paste a new key to replace it")" @bind="auddKeyInput" @bind:event="oninput" />
+                            <button type="button" class="tool" disabled="@(string.IsNullOrWhiteSpace(auddKeyInput))" @onclick="SaveAuddKey">Save</button>
+                            @if (auddKeyEnd is not null)
+                            {
+                                <button type="button" class="tool" @onclick="RemoveAuddKey">Remove</button>
+                            }
+                        </div>
+                        @if (auddMessage is not null)
+                        {
+                            <p class="backup-msg" role="status">@auddMessage</p>
+                        }
+                    </section>
+
                     <section class="set-card">
                         <h2>Pronunciation</h2>
                         @if (canSpeak)
@@ -597,7 +619,8 @@ else
             else if (tab == Tab.Read)
             {
                 <ReadHub Words="words" StateOf="State" Progress="progress" OnChanged="ReadChanged" OnStudy="StudyGroup"
-                         OnShowVerbs="() => SetTab(Tab.Verbs)" CanSpeak="canSpeak" Speak="Speak" />
+                         OnShowVerbs="() => SetTab(Tab.Verbs)" CanSpeak="canSpeak" Speak="Speak"
+                         OnOpenSettings="OpenSongSettings" />
             }
             else if (tab == Tab.Games)
             {
@@ -835,6 +858,12 @@ else
             try { await JS.InvokeVoidAsync("palabras.timerStart"); }
             catch (Exception) { }
             if (progress.TypeAnswers) focusFor = "answer";
+        }
+        if (scrollTo is { } target && tab == Tab.Settings)
+        {
+            scrollTo = null;
+            try { await JS.InvokeVoidAsync("palabras.scrollToId", target); }
+            catch (Exception) { }
         }
         if (focusFor is { } which)
         {
@@ -1267,7 +1296,11 @@ else
         timedCardKey = null; // coming back to Cards restarts the timer
         tab = t;
         confirmReset = false;
-        if (t == Tab.Settings) _ = LoadHistory();
+        if (t == Tab.Settings)
+        {
+            _ = LoadHistory();
+            _ = LoadAuddKey();
+        }
         // The card on screen (and a pick you haven't confirmed yet) is kept for when you come back.
     }
 
@@ -1656,6 +1689,47 @@ else
         };
         history?.Add(entry);
         return Store.LogAsync(entry);
+    }
+
+    // ----- song recognition key -----
+
+    private string auddKeyInput = "";
+    private string? auddKeyEnd;     // the last 4 characters of the saved key (null = none saved)
+    private string? auddMessage;
+    private string? scrollTo;       // an element to scroll to after the next render (Settings)
+
+    private async Task LoadAuddKey()
+    {
+        var key = await Store.GetAuddKeyAsync();
+        auddKeyEnd = string.IsNullOrWhiteSpace(key) ? null : key.Trim()[^Math.Min(4, key.Trim().Length)..];
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveAuddKey()
+    {
+        var key = auddKeyInput.Trim();
+        if (key.Length == 0) return;
+        if (await Store.SetAuddKeyAsync(key))
+        {
+            auddKeyInput = "";
+            auddMessage = "Saved. Tap the microphone on the Read tab to try it.";
+        }
+        else auddMessage = "This browser wouldn't save the key (private browsing?).";
+        await LoadAuddKey();
+    }
+
+    private async Task RemoveAuddKey()
+    {
+        await Store.SetAuddKeyAsync(null);
+        auddMessage = "Key removed from this browser.";
+        await LoadAuddKey();
+    }
+
+    /// <summary>From the Read tab's song finder: Settings, scrolled to Song recognition.</summary>
+    private void OpenSongSettings()
+    {
+        SetTab(Tab.Settings);
+        scrollTo = "set-songs";
     }
 
     private async Task LoadHistory()

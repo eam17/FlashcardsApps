@@ -47,6 +47,9 @@ public sealed class Progress
     /// <summary>Schedule parameters fitted to your own review history (null = the standard ones).</summary>
     public double[]? FsrsParameters { get; set; }
 
+    /// <summary>Songs sent to AudD from this device (to keep an eye on the 300 free ones).</summary>
+    public int AuddUses { get; set; }
+
     /// <summary>New words a day before Cards says you're done for today (0 = no goal). You can always learn more.</summary>
     public int DailyNewLimit { get; set; } = 10;
 
@@ -169,6 +172,29 @@ public sealed class ProgressStore(IJSRuntime js)
         {
             // Storage unavailable (e.g. private browsing): progress lasts for this session only.
         }
+    }
+
+    // ---------- the AudD key (Settings → Song recognition) ----------
+    // Kept under its own key, outside the progress, so it never ends up in a backup or an export file.
+
+    private const string AuddKeyName = "palabras-audd-key";
+
+    public async Task<string?> GetAuddKeyAsync()
+    {
+        try { return await js.InvokeAsync<string?>("localStorage.getItem", AuddKeyName); }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>Saves the key (empty removes it). False when the browser wouldn't store it.</summary>
+    public async Task<bool> SetAuddKeyAsync(string? key)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(key)) await js.InvokeVoidAsync("localStorage.removeItem", AuddKeyName);
+            else await js.InvokeVoidAsync("localStorage.setItem", AuddKeyName, key.Trim());
+            return true;
+        }
+        catch (Exception) { return false; }
     }
 
     // ---------- review history (IndexedDB) ----------

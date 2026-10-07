@@ -10,6 +10,26 @@ public sealed class SavedText
 
     /// <summary>Words you chose to study for this text (word list ids, including your own words).</summary>
     public List<string> Study { get; set; } = new();
+
+    /// <summary>Song lyrics found by search or by listening: where they came from (null for a pasted text).</summary>
+    public SongInfo? Song { get; set; }
+}
+
+/// <summary>The song a text's lyrics belong to.</summary>
+public sealed class SongInfo
+{
+    public string Track { get; set; } = "";
+    public string Artist { get; set; } = "";
+    public string? Album { get; set; }
+
+    /// <summary>Length in seconds (0 if unknown).</summary>
+    public double Duration { get; set; }
+
+    /// <summary>The lyrics' id on LRCLIB.</summary>
+    public long LrclibId { get; set; }
+
+    /// <summary>Lyrics with a time for each line ("[01:23.45] line"), when LRCLIB has them; kept for following along.</summary>
+    public string? Synced { get; set; }
 }
 
 /// <summary>

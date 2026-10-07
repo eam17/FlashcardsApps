@@ -1,8 +1,14 @@
-@* The Read tab: paste a Spanish text, see how much of it you can read, and learn the words (and verb
-   tenses) that unlock the rest. Your texts are kept in a list. The reading itself is TextReader.razor;
-   the analysis is Models/Reading/TextAnalysis.cs. *@
+@* The Read tab: paste a Spanish text, or find a song's lyrics (by listening or by name), see how much of it
+   you can read, and learn the words (and verb tenses) that unlock the rest. Your texts are kept in a list.
+   The reading itself is TextReader.razor; the analysis is Models/Reading/TextAnalysis.cs. Lyrics come from
+   LRCLIB (Services/SongService.cs); listening uses AudD with your key (wwwroot/js/songs.js). *@
+@implements IDisposable
+@using System.Text.Json
 @inject DictionaryRepository DictRepo
 @inject VerbRepository VerbRepo
+@inject SongService SongApi
+@inject ProgressStore Store
+@inject IJSRuntime JS
 
 <div class="rd">
     @if (Open is { } text)
@@ -14,9 +20,84 @@
     }
     else
     {
+        <section class="song-card" aria-label="Songs">
+            <div class="song-intro">
+                <h2 class="rd-h">Songs</h2>
+                <p class="song-sub">Hear a song in Spanish? Let the app listen, or look it up by name. The lyrics open here, with everything the Read tab does.</p>
+            </div>
+
+            <div class="song-listen">
+                <button type="button" class="mic-btn @PhaseClass" @onclick="MicTapped"
+                        aria-label="@(phase == SongPhase.Listening ? "Stop listening" : "Listen for a song")"
+                        disabled="@(phase is SongPhase.Matching or SongPhase.Searching)">
+                    <span class="mic-ring" aria-hidden="true"></span>
+                    <span class="mic-ring two" aria-hidden="true"></span>
+                    @if (phase == SongPhase.Listening)
+                    {
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
+                    }
+                    else
+                    {
+                        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v1a7 7 0 0 0 14 0v-1" /><path d="M12 18v4" /><path d="M8 22h8" /></svg>
+                    }
+                </button>
+                <div class="mic-text" role="status" aria-live="@(recording ? "off" : "polite")">
+                    <span class="mic-title">@MicTitle</span>
+                    <span class="mic-hint">@MicHint</span>
+                </div>
+            </div>
+
+            <form class="song-search" @onsubmit="SearchByName" @onsubmit:preventDefault="true" role="search">
+                <svg class="song-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                <input type="search" class="song-input" maxlength="120" placeholder="Song or artist" aria-label="Song or artist"
+                       @bind="query" @bind:event="oninput" enterkeyhint="search" />
+                <button type="submit" class="tool" disabled="@(string.IsNullOrWhiteSpace(query) || phase != SongPhase.Idle)">Search</button>
+            </form>
+
+            @if (songMessage is not null)
+            {
+                <p class="song-msg @(songMessageIsError ? "error" : "")" role="status">
+                    @songMessage
+                    @if (needsKey)
+                    {
+                        <button type="button" class="link-btn" @onclick="OnOpenSettings">Add your key in Settings</button>
+                    }
+                </p>
+            }
+
+            @if (results is { Count: > 0 })
+            {
+                <div class="list song-results">
+                    @foreach (var t in results)
+                    {
+                        var track = t;
+                        var opened = Progress.Texts.Any(x => x.Song?.LrclibId == track.Id);
+                        <button type="button" class="row song-row" disabled="@(!track.HasLyrics)" @onclick="() => OpenSong(track)">
+                            <span class="song-art" aria-hidden="true">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+                            </span>
+                            <span class="row-text">
+                                <span class="row-word">@track.TrackName</span>
+                                <span class="row-sub">@ResultSub(track)</span>
+                            </span>
+                            @if (!track.HasLyrics)
+                            {
+                                <span class="song-tag muted">@(track.Instrumental ? "Instrumental" : "No lyrics")</span>
+                            }
+                            else if (opened)
+                            {
+                                <span class="song-tag">In your texts</span>
+                            }
+                        </button>
+                    }
+                </div>
+                <p class="list-hint">Lyrics from LRCLIB, written by its users, so the odd mistake is possible.</p>
+            }
+        </section>
+
         <section class="rd-new" aria-label="New text">
             <h2 class="rd-h">Read something</h2>
-            <p class="list-hint">Paste any Spanish text: an article, a message, song lyrics. You'll see how much you can already read, which words to learn first, and which verb tenses it uses.</p>
+            <p class="list-hint">Paste any Spanish text: an article, a message, a story. You'll see how much you can already read, which words to learn first, and which verb tenses it uses.</p>
             <textarea class="rd-paste" rows="6" maxlength="20000" placeholder="Pega aquí tu texto…" lang="es"
                       @bind="draft" @bind:event="oninput" aria-label="Spanish text"></textarea>
             <input class="rd-title-input" type="text" maxlength="80" placeholder="Title (optional)" @bind="draftTitle" aria-label="Title" />
@@ -31,9 +112,15 @@
                     @foreach (var t in Progress.Texts.OrderByDescending(t => t.Added))
                     {
                         var x = t;
-                        <button type="button" class="row" @onclick="() => openId = x.Id">
+                        <button type="button" class="row" @onclick="() => OpenText(x.Id)">
                             <span class="row-text">
-                                <span class="row-word">@x.Title</span>
+                                <span class="row-word">
+                                    @if (x.Song is not null)
+                                    {
+                                        <svg class="row-note" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="Song"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+                                    }
+                                    @x.Title
+                                </span>
                                 <span class="row-sub">@Summary(x)</span>
                             </span>
                         </button>
@@ -56,6 +143,8 @@
     [Parameter] public EventCallback OnShowVerbs { get; set; }
     [Parameter] public bool CanSpeak { get; set; }
     [Parameter] public Func<string, Task>? Speak { get; set; }
+    /// <summary>Go to Settings → Song recognition (to add the AudD key).</summary>
+    [Parameter] public EventCallback OnOpenSettings { get; set; }
 
     // The open text and the half-written new one, kept while the app is open.
     private static string? openId;
@@ -71,6 +160,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // A "add your key" note from an earlier visit may be out of date (the key may be in Settings now).
+        if (needsKey) Say(null);
+
         // The dictionary and the verbs load side by side; the reader works with whatever has arrived.
         var dictTask = LoadDict();
         var verbTask = LoadVerbs();
@@ -93,6 +185,7 @@
 
     private async Task Add()
     {
+        await StopListening();
         var text = draft.Trim();
         if (text.Length == 0) return;
         var saved = new SavedText { Text = text, Title = string.IsNullOrWhiteSpace(draftTitle) ? TitleFor(text) : draftTitle.Trim() };
@@ -121,6 +214,296 @@
     {
         var words = t.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
         var study = t.Study.Count > 0 ? $" · {t.Study.Count} words to study" : "";
-        return $"{t.Added.ToLocalTime():d MMM} · {words} words{study}";
+        var by = t.Song is { Artist.Length: > 0 } song ? $"{song.Artist} · " : "";
+        return $"{by}{t.Added.ToLocalTime():d MMM} · {words} words{study}";
+    }
+
+    // ---------------------------------------------------------------- songs
+
+    private enum SongPhase { Idle, Listening, Matching, Searching }
+
+    /// <summary>How long to listen. AudD needs only a few seconds of the song.</summary>
+    private const int ListenSeconds = 8;
+
+    // Kept while the app is open, like the draft above, so the results are still there after switching tabs.
+    private static string query = "";
+    private static List<LrcTrack>? results;
+    private static string? songMessage;
+    private static bool songMessageIsError;
+    private static bool needsKey;
+
+    private SongPhase phase = SongPhase.Idle;
+    private int secondsLeft;
+    private bool starting;      // between the tap and the end of Listen (a second tap is ignored)
+    private bool recording;     // the microphone is on (after the permission prompt)
+    private bool disposed;
+    private DotNetObjectReference<ReadHub>? selfRef;
+
+    private string PhaseClass => phase switch
+    {
+        SongPhase.Listening => "listening",
+        SongPhase.Matching or SongPhase.Searching => "busy",
+        _ => "",
+    };
+
+    private string MicTitle => phase switch
+    {
+        SongPhase.Listening when !recording => "Starting the microphone…",
+        SongPhase.Listening => $"Listening… {secondsLeft}",
+        SongPhase.Matching => "Working out the song…",
+        SongPhase.Searching => "Finding the lyrics…",
+        _ => "Tap to listen",
+    };
+
+    private string MicHint => phase switch
+    {
+        SongPhase.Listening => "Hold your phone near the music. Tap to stop.",
+        SongPhase.Matching or SongPhase.Searching => "Just a moment",
+        _ => $"About {ListenSeconds} seconds of the song is enough",
+    };
+
+    private void Say(string? message, bool error = false, bool key = false)
+    {
+        songMessage = message;
+        songMessageIsError = error;
+        needsKey = key;
+    }
+
+    private void Refresh()
+    {
+        if (!disposed) StateHasChanged();
+    }
+
+    private async Task MicTapped()
+    {
+        if (phase == SongPhase.Listening)
+        {
+            await StopListening();
+            return; // Listen() sees "cancelled" and tidies up
+        }
+        if (phase != SongPhase.Idle || starting) return;
+        starting = true;
+        try { await Listen(); }
+        finally
+        {
+            starting = false;
+            recording = false;
+        }
+    }
+
+    /// <summary>Stops the microphone if it's on (the recording is thrown away).</summary>
+    private async Task StopListening()
+    {
+        if (phase != SongPhase.Listening) return;
+        try { await JS.InvokeVoidAsync("palabrasSongs.cancel"); }
+        catch (Exception) { }
+    }
+
+    /// <summary>Called from songs.js once the microphone is actually recording (after any permission prompt).</summary>
+    [JSInvokable]
+    public void RecordingStarted()
+    {
+        if (phase != SongPhase.Listening || recording) return;
+        recording = true;
+        secondsLeft = ListenSeconds;
+        _ = CountDown();
+        Refresh();
+    }
+
+    private async Task Listen()
+    {
+        // Listening from the first moment, so the button shows it and a second tap can stop it.
+        phase = SongPhase.Listening;
+        recording = false;
+        Say(null);
+        Refresh();
+        var key = await Store.GetAuddKeyAsync();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            phase = SongPhase.Idle;
+            Say("To recognise songs, the app needs your AudD key (300 songs free, then about half a cent each). Searching by name is always free.", key: true);
+            return;
+        }
+
+        results = null;
+        selfRef ??= DotNetObjectReference.Create(this);
+        ClipResult clip;
+        try { clip = await JS.InvokeAsync<ClipResult>("palabrasSongs.record", ListenSeconds * 1000, selfRef); }
+        catch (Exception) { clip = new ClipResult { Error = "failed" }; }
+        recording = false;
+
+        if (!clip.Ok || clip.Id is null)
+        {
+            phase = SongPhase.Idle;
+            Say(clip.Error switch
+            {
+                "cancelled" => null,
+                "denied" => "The microphone is blocked for this site. Allow it in your browser's site settings, then try again.",
+                "nomic" => "No microphone found on this device.",
+                "unsupported" => "This browser can't record sound. Try Safari on iPhone or Chrome on Android, or search by name.",
+                "empty" => "Nothing was recorded. Try again.",
+                _ => "Couldn't use the microphone. Try again, or search by name.",
+            }, error: clip.Error is not "cancelled");
+            Refresh();
+            return;
+        }
+
+        phase = SongPhase.Matching;
+        Refresh();
+        SendResult sent;
+        try { sent = await JS.InvokeAsync<SendResult>("palabrasSongs.send", clip.Id, key); }
+        catch (Exception) { sent = new SendResult { Error = "network" }; }
+
+        var (song, problem, keyProblem, noMatch, counted) = ReadAudd(sent);
+        if (counted)
+        {
+            Progress.AuddUses++;
+            await Store.SaveAsync(Progress); // keeps the count
+        }
+        if (song is null)
+        {
+            phase = SongPhase.Idle;
+            Say(problem, error: !noMatch, key: keyProblem);
+            Refresh();
+            return;
+        }
+
+        var title = song.Title?.Trim() ?? "";
+        var artist = song.Artist?.Trim() ?? "";
+        var heard = artist.Length > 0 ? $"Heard: {title} by {artist}" : $"Heard: {title}";
+        phase = SongPhase.Searching;
+        query = $"{title} {artist}".Trim();
+        Say(heard);
+        Refresh();
+        try
+        {
+            results = await SongApi.FindAsync(title, artist);
+            if (!results.Any(t => t.HasLyrics))
+                Say($"{heard}. LRCLIB doesn't have its lyrics yet.");
+        }
+        catch (Exception)
+        {
+            results = null;
+            Say($"{heard}, but couldn't reach LRCLIB for the lyrics. Check your connection and search again.", error: true);
+        }
+        phase = SongPhase.Idle;
+        Refresh();
+    }
+
+    private async Task CountDown()
+    {
+        while (phase == SongPhase.Listening && recording && secondsLeft > 0 && !disposed)
+        {
+            await Task.Delay(1000);
+            if (phase != SongPhase.Listening || !recording) break;
+            secondsLeft = Math.Max(0, secondsLeft - 1);
+            Refresh();
+        }
+    }
+
+    /// <summary>
+    /// AudD's answer: the song, or what to tell you, whether the key is the problem, whether it simply didn't
+    /// find a match (not an error), and whether AudD counted it as a request (for the count in Settings).
+    /// </summary>
+    private static (AuddResult? Song, string? Problem, bool KeyProblem, bool NoMatch, bool Counted) ReadAudd(SendResult sent)
+    {
+        if (!sent.Ok || string.IsNullOrWhiteSpace(sent.Body))
+            return (null, "Couldn't reach AudD. Check your connection and try again.", false, false, false);
+        AuddResponse? r;
+        try { r = JsonSerializer.Deserialize<AuddResponse>(sent.Body, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
+        catch (JsonException) { r = null; }
+        if (r is null || r.Status is null) return (null, "AudD sent back something unexpected. Try again in a moment.", false, false, false);
+        if (string.Equals(r.Status, "error", StringComparison.OrdinalIgnoreCase))
+        {
+            return r.Error?.ErrorCode switch
+            {
+                900 or 901 => (null, "AudD didn't accept the key. Check it in Settings.", true, false, false),
+                902 => (null, "Your AudD songs have run out (the free ones or your balance). You can top up at audd.io; searching by name still works.", true, false, false),
+                904 => (null, "Your AudD account can't do this. Check your plan at audd.io.", true, false, false),
+                _ => (null, $"AudD couldn't recognise it ({r.Error?.ErrorMessage ?? "unknown error"}). Try again, or search by name.", false, false, false),
+            };
+        }
+        if (r.Result is not { } song || string.IsNullOrWhiteSpace(song.Title))
+            return (null, "Couldn't place that song. Try again closer to the music, or search by name.", false, true, true);
+        return (song, null, false, false, true);
+    }
+
+    /// <summary>Opens one of your texts (stopping the microphone if it's on).</summary>
+    private async Task OpenText(string id)
+    {
+        await StopListening();
+        openId = id;
+    }
+
+    private async Task SearchByName()
+    {
+        var q = query.Trim();
+        if (q.Length == 0 || phase != SongPhase.Idle) return;
+        phase = SongPhase.Searching;
+        Say(null);
+        results = null;
+        try
+        {
+            results = await SongApi.SearchAsync(q);
+            if (results.Count == 0) Say($"Nothing found for \"{q}\". Try the song title with the artist.");
+        }
+        catch (Exception)
+        {
+            Say("Couldn't reach LRCLIB. Check your connection and try again.", error: true);
+        }
+        phase = SongPhase.Idle;
+        Refresh();
+    }
+
+    private static string ResultSub(LrcTrack t)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(t.ArtistName)) parts.Add(t.ArtistName.Trim());
+        if (!string.IsNullOrWhiteSpace(t.AlbumName)) parts.Add(t.AlbumName.Trim());
+        var length = Songs.DurationText(t.Duration);
+        if (length.Length > 0) parts.Add(length);
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>Opens a song's lyrics as a text (the one already in your texts, if you opened it before).</summary>
+    private async Task OpenSong(LrcTrack t)
+    {
+        if (t.Lyrics is not { Length: > 0 } lyrics) return;
+        var existing = Progress.Texts.FirstOrDefault(x => x.Song?.LrclibId == t.Id);
+        if (existing is not null)
+        {
+            openId = existing.Id;
+            return;
+        }
+        var title = string.IsNullOrWhiteSpace(t.TrackName) ? TitleFor(lyrics) : t.TrackName.Trim();
+        var saved = new SavedText
+        {
+            Title = title.Length > 80 ? title[..80] : title,
+            Text = lyrics.Length > 20000 ? lyrics[..20000] : lyrics,
+            Song = new SongInfo
+            {
+                Track = t.TrackName?.Trim() ?? "",
+                Artist = t.ArtistName?.Trim() ?? "",
+                Album = t.AlbumName?.Trim(),
+                Duration = t.Duration ?? 0,
+                LrclibId = t.Id,
+                // Kept for following along, unless it's oddly long (it's stored with your progress).
+                Synced = string.IsNullOrWhiteSpace(t.SyncedLyrics) || t.SyncedLyrics.Length > 30000 ? null : t.SyncedLyrics,
+            },
+        };
+        Progress.Texts.Add(saved);
+        openId = saved.Id;
+        await OnChanged.InvokeAsync();
+    }
+
+    public void Dispose()
+    {
+        disposed = true;
+        if (phase == SongPhase.Listening)
+        {
+            try { _ = JS.InvokeVoidAsync("palabrasSongs.cancel").AsTask(); }
+            catch (Exception) { }
+        }
+        selfRef?.Dispose();
     }
 }

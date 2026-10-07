@@ -12,5 +12,6 @@ builder.Services.AddScoped<WordRepository>();
 builder.Services.AddScoped<VerbRepository>();
 builder.Services.AddScoped<DictionaryRepository>();
 builder.Services.AddScoped<ProgressStore>();
+builder.Services.AddScoped<SongService>();
 
 await builder.Build().RunAsync();

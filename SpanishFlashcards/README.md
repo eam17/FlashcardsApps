@@ -74,7 +74,13 @@ Upload the contents of `bin/Release/net10.0/publish/wwwroot` to any static host 
 
 ## Read tab
 
-Paste any Spanish text (up to 20,000 characters) and see how much of it you can read.
+Paste any Spanish text (up to 20,000 characters), or find a song's lyrics, and see how much of it you can read.
+
+- **Songs** (the card at the top):
+  - **Listen:** tap the microphone and hold the phone near the music. It records 8 seconds (tap again to stop), sends them to [AudD](https://audd.io) to name the song, then finds its lyrics. It needs your own AudD key, pasted in Settings → *Song recognition* (300 songs free on signup, then about $5 per 1,000). The key is kept only in this browser (`localStorage` key `palabras-audd-key`, outside the progress, so it's never in a backup or export) and is only sent to `api.audd.io`. Settings shows how many songs this device has sent.
+  - **Search:** type a song or artist. Free, no key.
+  - Lyrics come from [LRCLIB](https://lrclib.net), a free crowdsourced lyrics database (no key; its API allows calls from any web page). Results are one per song, songs with lyrics first. Tap one and the lyrics open as a text with everything below, with the artist, album and length under the title and a note in *Your texts*. Opening the same song again opens the text you already have. Time-synced lyrics are saved too (`Song.Synced`), ready for following along.
+  - Code: `Components/Read/ReadHub.razor` (the card), `Services/SongService.cs` (LRCLIB), `Models/Reading/Songs.cs` (LRCLIB and AudD shapes, tidying results), `wwwroot/js/songs.js` (recording and sending to AudD; no echo cancelling or noise suppression, since it's music).
 
 - **Coverage:** the share of words you know (learned) or are learning, as a bar (known / learning / new). Names (a capital letter mid-sentence) and words found nowhere don't count.
 - **Words to learn first:** the fewest new words that take you to 95%, most useful first (most often in the text, then most common in Spanish), each with its meaning and how often it appears. Tick or untick, then *Study these N words*: words from the app's list are added to the text's study list; words outside it become your own cards (topic *My words*) with the sentence from your text as the example. Each text with words to study gets its own group in the Cards picker (*From your texts*), and *Practise this text's words* opens it. *Other new words* lists the rest.
