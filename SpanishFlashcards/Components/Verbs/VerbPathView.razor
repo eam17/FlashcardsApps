@@ -1,0 +1,145 @@
+@* The Path page of the Verbs tab: the next lesson, reviews that are due, the placement check, and the map
+   (where you are, tense by tense). The full tree is one tap away (Browse). *@
+
+@{
+    var now = DateTime.UtcNow;
+    bool Done(VerbLesson l) => VerbPath.IsDone(l, Progress.VerbLessons, Progress.VerbSkills, Progress.VerbTests, now);
+    var doneSet = Lessons.Where(Done).Select(l => l.Number).ToHashSet();
+    var next = Lessons.FirstOrDefault(l => !doneSet.Contains(l.Number));
+    var due = DueCount;
+    var tenses = Lessons.GroupBy(l => l.Tense).ToList();
+    var solid = tenses.Count(g => g.All(l => doneSet.Contains(l.Number)));
+}
+
+<div class="vpath">
+    @if (Current is { } cur && cur.Current != LessonRound.Step.Result)
+    {
+        <section class="vb-next vpath-hero">
+            <div class="vb-next-kicker">@($"Lesson {cur.Lesson.Number} in progress")</div>
+            <div class="vb-next-title">@cur.Lesson.FullTitle</div>
+            <div class="vb-next-actions">
+                <button type="button" class="primary vb-next-go" @onclick="() => OnStartLesson.InvokeAsync(cur.Lesson)">Continue the lesson</button>
+            </div>
+        </section>
+    }
+    else if (next is not null)
+    {
+        <section class="vb-next vpath-hero">
+            <div class="vb-next-kicker">@($"Up next · lesson {next.Number} of {Lessons.Count}")</div>
+            <div class="vb-next-title">@next.FullTitle</div>
+            <div class="vb-next-text">@($"{next.Tense.Subtitle}. About 5 minutes: the idea, real sentences, recognising the forms, then making them.")</div>
+            <div class="vb-next-actions">
+                <button type="button" class="primary vb-next-go" @onclick="() => OnStartLesson.InvokeAsync(next)">Start lesson</button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="vb-next vpath-hero">
+            <div class="vb-next-kicker">Path done</div>
+            <div class="vb-next-title">You've done every lesson</div>
+            <div class="vb-next-text">The last four tenses are rare: being able to recognise them is enough. Practise reading them in Decode, and keep up your reviews.</div>
+            <div class="vb-next-actions">
+                <button type="button" class="primary vb-next-go" @onclick="() => OnDecode.InvokeAsync()">Practise reading</button>
+            </div>
+        </section>
+    }
+
+    @if (due > 0)
+    {
+        <section class="vpath-review">
+            <span class="vpath-review-text">
+                <span class="vpath-review-title">@($"{due} verb {(due == 1 ? "form is" : "forms are")} due")</span>
+                <span class="vpath-review-sub">A short review keeps them fresh. They also come up on the Cards tab after your words.</span>
+            </span>
+            <button type="button" class="tool" @onclick="() => OnReview.InvokeAsync()">Review</button>
+        </section>
+    }
+
+    @if (!Progress.VerbPlacementDone && Progress.VerbLessons.Count == 0)
+    {
+        <section class="vpath-place">
+            <span class="vpath-review-text">
+                <span class="vpath-review-title">Already know some verbs?</span>
+                <span class="vpath-review-sub">A quick placement check skips the lessons you know, so the path starts where you are.</span>
+            </span>
+            <button type="button" class="tool" @onclick="() => OnPlacement.InvokeAsync()">Placement check</button>
+        </section>
+    }
+
+    <section class="vpath-map" aria-label="Your verb map">
+        <div class="vpath-map-head">
+            <h2 class="rd-h">Your map</h2>
+            <span class="vpath-map-sum">@($"{solid} of {tenses.Count} tenses done · {doneSet.Count} of {Lessons.Count} lessons")</span>
+        </div>
+        @foreach (var stage in VerbGrammar.Stages.Where(s => s.Number <= 3))
+        {
+            var st = stage;
+            var inStage = tenses.Where(g => g.Key.TenseInfo!.Stage == st.Number).ToList();
+            if (inStage.Count == 0) continue;
+            <div class="vpath-stage">
+                <div class="vpath-stage-title"><span class="vb-stage-num" aria-hidden="true">@st.Number</span> @st.Title</div>
+                @foreach (var g in inStage)
+                {
+                    var tense = g.Key;
+                    var list = g.ToList();
+                    var n = list.Count(l => doneSet.Contains(l.Number));
+                    var all = n == list.Count;
+                    var here = next is not null && next.Tense == tense;
+                    <div class="vpath-tense @(all ? "solid" : "") @(here ? "here" : "")">
+                        <button type="button" class="vpath-tense-name" @onclick="() => OnBrowse.InvokeAsync(tense)">
+                            <span>@tense.Title</span>
+                            @if (here)
+                            {
+                                <span class="vpath-here">You are here</span>
+                            }
+                            else if (all)
+                            {
+                                <span class="vpath-ok" aria-label="done">✓</span>
+                            }
+                        </button>
+                        <span class="vpath-count">@($"{n}/{list.Count}")</span>
+                        <span class="vpath-dots">
+                            @foreach (var l in list)
+                            {
+                                var lesson = l;
+                                var isDone = doneSet.Contains(l.Number);
+                                var isNext = next == l;
+                                <button type="button" class="vpath-dot @(isDone ? "done" : "") @(isNext ? "next" : "")"
+                                        title="@($"Lesson {l.Number}: {l.Title}{(isDone ? " (done)" : "")}")"
+                                        aria-label="@($"Lesson {l.Number}: {l.Title}{(isDone ? ", done" : isNext ? ", up next" : "")}")"
+                                        @onclick="() => OnStartLesson.InvokeAsync(lesson)"></button>
+                            }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+        <div class="vpath-stage">
+            <div class="vpath-stage-title"><span class="vb-stage-num" aria-hidden="true">4</span> Recognise only</div>
+            <button type="button" class="tool small" @onclick="() => OnDecode.InvokeAsync()">Practise reading the rare tenses (Decode)</button>
+        </div>
+        <p class="list-hint">Tap a dot to take (or redo) any lesson. A lesson is done when you pass it, when the placement check skips it, or when you already know its forms well.</p>
+    </section>
+
+    <div class="vpath-more">
+        <button type="button" class="tool" @onclick="() => OnBrowse.InvokeAsync(null)">Browse everything</button>
+        @if (Progress.VerbPlacementDone || Progress.VerbLessons.Count > 0)
+        {
+            <button type="button" class="tool" @onclick="() => OnPlacement.InvokeAsync()">Placement check</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<VerbLesson> Lessons { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public int DueCount { get; set; }
+    /// <summary>A lesson in progress (shown as "Continue the lesson").</summary>
+    [Parameter] public LessonRound? Current { get; set; }
+    [Parameter] public EventCallback<VerbLesson> OnStartLesson { get; set; }
+    [Parameter] public EventCallback OnReview { get; set; }
+    [Parameter] public EventCallback OnPlacement { get; set; }
+    [Parameter] public EventCallback<VerbNode?> OnBrowse { get; set; }
+    [Parameter] public EventCallback OnDecode { get; set; }
+}

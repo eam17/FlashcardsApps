@@ -57,6 +57,9 @@ public sealed class Progress
     public int ClaudeTranslations { get; set; }
     public double ClaudeSpend { get; set; }
 
+    /// <summary>Stories Claude wrote with your words (Read tab), from this device.</summary>
+    public int ClaudeStories { get; set; }
+
     /// <summary>New words a day before Cards says you're done for today (0 = no goal). You can always learn more.</summary>
     public int DailyNewLimit { get; set; } = 10;
 
@@ -77,6 +80,15 @@ public sealed class Progress
 
     /// <summary>Verbs tab: latest test result per tree item (keyed by item id, e.g. "t:pres/stem/o-ue").</summary>
     public Dictionary<string, VerbTestRecord> VerbTests { get; set; } = new();
+
+    /// <summary>Verbs tab, Path: lessons passed or skipped by the placement check (keyed by item id).</summary>
+    public Dictionary<string, LessonRecord> VerbLessons { get; set; } = new();
+
+    /// <summary>Verbs tab: the placement check was taken (finished or stopped).</summary>
+    public bool VerbPlacementDone { get; set; }
+
+    /// <summary>Verb forms due for review also come up on the Cards tab, after your words.</summary>
+    public bool VerbsInCards { get; set; } = true;
 
     /// <summary>Read tab: texts you pasted, with the words you chose to study for each.</summary>
     public List<SavedText> Texts { get; set; } = new();

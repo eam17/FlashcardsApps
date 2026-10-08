@@ -16,6 +16,18 @@ public sealed class SavedText
 
     /// <summary>The English translation by Claude, line by line, with notes (null until you ask for one).</summary>
     public TextTranslation? Translation { get; set; }
+
+    /// <summary>A story Claude wrote with the words you're learning (null for other texts).</summary>
+    public StoryInfo? Story { get; set; }
+}
+
+/// <summary>What a story was written to practise.</summary>
+public sealed class StoryInfo
+{
+    /// <summary>The words it was asked to use (word list ids).</summary>
+    public List<string> Words { get; set; } = new();
+
+    public string? Topic { get; set; }
 }
 
 /// <summary>A text translated by Claude: one English line per line of the text, plus notes for a learner.</summary>

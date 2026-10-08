@@ -8,6 +8,7 @@
 @inject VerbRepository VerbRepo
 @inject SongService SongApi
 @inject ProgressStore Store
+@inject ClaudeService Claude
 @inject IJSRuntime JS
 
 <div class="rd">
@@ -95,6 +96,51 @@
             }
         </section>
 
+        <section class="story-card" aria-label="A story with your words">
+            <div class="song-intro">
+                <h2 class="rd-h">A story with your words</h2>
+                <p class="song-sub">Claude writes a short story using the words you're learning right now, so you meet them in context. The English is under each line.</p>
+            </div>
+            @{ var targets = phase == SongPhase.Idle ? (storyTargets = StoryTargets()) : storyTargets ?? StoryTargets(); }
+            @if (targets.Count == 0)
+            {
+                <p class="list-hint">Start a few new words on the Cards tab first, and they'll go into your stories.</p>
+            }
+            else
+            {
+                <div class="story-words" aria-label="Words it will use">
+                    @foreach (var w in targets)
+                    {
+                        <span class="story-chip" lang="es" title="@w.En">@w.Es</span>
+                    }
+                </div>
+                <input class="rd-title-input" type="text" maxlength="80" placeholder="What about? (optional: a trip, cooking, a first date…)"
+                       @bind="storyTopic" @bind:event="oninput" aria-label="Story topic" />
+                <button type="button" class="primary wide story-btn" disabled="@writingStory" @onclick="() => WriteStory(targets)">
+                    @if (writingStory)
+                    {
+                        <span class="tr-spin light" aria-hidden="true"></span>
+                        <span>Writing your story…</span>
+                    }
+                    else
+                    {
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.8L19 9.7l-4.1 3.3 1.3 5.2L12 15.4l-4.2 2.8 1.3-5.2L5 9.7l5.1-1.9z" /></svg>
+                        <span>Write a story</span>
+                    }
+                </button>
+            }
+            @if (storyError is not null)
+            {
+                <p class="song-msg error" role="status">
+                    @storyError
+                    @if (storyKeyProblem)
+                    {
+                        <button type="button" class="link-btn" @onclick="@(() => OnOpenSettings.InvokeAsync("set-claude"))">Open Settings</button>
+                    }
+                </p>
+            }
+        </section>
+
         <section class="rd-new" aria-label="New text">
             <h2 class="rd-h">Read something</h2>
             <p class="list-hint">Paste any Spanish text: an article, a message, a story. You'll see how much you can already read, which words to learn first, and which verb tenses it uses.</p>
@@ -115,7 +161,11 @@
                         <button type="button" class="row" @onclick="() => OpenText(x.Id)">
                             <span class="row-text">
                                 <span class="row-word">
-                                    @if (x.Song is not null)
+                                    @if (x.Story is not null)
+                                    {
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="row-note" aria-label="Story"><path d="M12 3l1.9 4.8L19 9.7l-4.1 3.3 1.3 5.2L12 15.4l-4.2 2.8 1.3-5.2L5 9.7l5.1-1.9z" /></svg>
+                                    }
+                                    else if (x.Song is not null)
                                     {
                                         <svg class="row-note" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="Song"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                                     }
@@ -214,8 +264,82 @@
     {
         var words = t.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
         var study = t.Study.Count > 0 ? $" · {t.Study.Count} words to study" : "";
-        var by = t.Song is { Artist.Length: > 0 } song ? $"{song.Artist} · " : "";
+        var by = t.Song is { Artist.Length: > 0 } song ? $"{song.Artist} · " : t.Story is not null ? "Story · " : "";
         return $"{by}{t.Added.ToLocalTime():d MMM} · {words} words{study}";
+    }
+
+    // ---------------------------------------------------------------- a story with your words
+
+    /// <summary>How many of your words go into one story.</summary>
+    private const int StoryWords = 10;
+
+    private static string storyTopic = "";
+    private List<Word>? storyTargets;   // worked out again on each render, except while the mic counts down
+    private static bool writingStory;   // static: going back to the list mid-way doesn't start a second one
+    private static string? storyError;     // static too, so a failure while you were elsewhere still shows
+    private static bool storyKeyProblem;
+
+    /// <summary>
+    /// The words to practise: ones in their first steps, then tricky ones, then reviews due today, then other
+    /// words not learned yet, most recently seen first within each.
+    /// </summary>
+    private List<Word> StoryTargets()
+    {
+        var today = Srs.Today;
+        var picks = new List<(Word W, int Group, long Recent)>();
+        foreach (var w in Words)
+        {
+            var s = StateOf(w);
+            if (s is null || Srs.IsNew(s) || Srs.IsRetired(s) || Srs.IsLearned(s)) continue;
+            var group = Srs.IsLearning(s) ? 0 : Srs.IsTricky(s) ? 1 : Srs.IsDue(s, today) ? 2 : 3;
+            picks.Add((w, group, s.LastSeen?.Ticks ?? 0));
+        }
+        return picks.OrderBy(p => p.Group).ThenByDescending(p => p.Recent).Take(StoryWords).Select(p => p.W).ToList();
+    }
+
+    private async Task WriteStory(List<Word> targets)
+    {
+        if (writingStory || targets.Count == 0) return;
+        storyError = null;
+        storyKeyProblem = false;
+        var key = await Store.GetClaudeKeyAsync();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            storyError = "To write stories, add your Claude API key in Settings.";
+            storyKeyProblem = true;
+            return;
+        }
+        await StopListening();
+        // Words you know well, most common first, so the rest of the story stays easy.
+        var known = Words.Where(w => Srs.IsLearned(StateOf(w))).OrderBy(w => w.Rank).Take(150).Select(w => w.Es).ToList();
+        var topic = storyTopic.Trim();
+        writingStory = true;
+        Refresh();
+        StoryOutcome outcome;
+        try
+        {
+            outcome = await Claude.WriteStoryAsync(targets.Select(w => (w.Es, w.En)).ToList(), known, topic,
+                                                   Progress.ShowVosotros, key, ClaudeService.Resolve(Progress.TranslateModel));
+        }
+        finally { writingStory = false; }
+
+        Progress.ClaudeSpend += outcome.Cost;
+        if (outcome.Text is { } story)
+        {
+            story.Story = new StoryInfo { Words = targets.Select(w => w.Es).ToList(), Topic = topic.Length > 0 ? topic : null };
+            Progress.Texts.Add(story);
+            Progress.ClaudeStories++;
+            storyTopic = "";
+            // Open it, unless you've gone on to read something else (or another tab) meanwhile.
+            if (openId is null && !disposed) openId = story.Id;
+        }
+        else
+        {
+            storyError = outcome.Error;
+            storyKeyProblem = outcome.KeyProblem;
+        }
+        await OnChanged.InvokeAsync(); // saves the story (and the spend)
+        Refresh();
     }
 
     // ---------------------------------------------------------------- songs

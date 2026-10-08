@@ -1,0 +1,180 @@
+@* One lesson on the path (LessonRound): the idea, real sentences, who is it?, practice, then the result.
+   All state lives in the round, so leaving and coming back keeps your place. *@
+
+<div class="ls">
+    <div class="ls-head">
+        <div class="ls-head-text">
+            <div class="ls-kicker">@($"Lesson {L.Lesson.Number}{(L.Attempt > 1 ? " · going over it again" : "")}")</div>
+            <h2 class="ls-title">@L.Lesson.FullTitle</h2>
+        </div>
+        <button type="button" class="vb-resume-x" aria-label="Close the lesson" title="Close (your place is kept)" @onclick="() => OnClose.InvokeAsync()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
+    </div>
+
+    <ol class="ls-steps" aria-label="Steps">
+        @{ var steps = L.Steps; var at = steps.ToList().IndexOf(L.Current); }
+        @for (var i = 0; i < steps.Count; i++)
+        {
+            <li class="ls-step @(i < at ? "done" : i == at ? "on" : "")" aria-current="@(i == at ? "step" : null)">@StepName(steps[i])</li>
+        }
+    </ol>
+
+    @switch (L.Current)
+    {
+        case LessonRound.Step.Learn:
+            <section class="ls-card">
+                @if (L.Attempt > 1 && L.Mistakes.Count > 0)
+                {
+                    <div class="ls-mistakes">
+                        <h3 class="ls-h3">What went wrong last time</h3>
+                        @foreach (var m in L.Mistakes.Take(4))
+                        {
+                            var verb = Book.ByInf.GetValueOrDefault(m.Verb);
+                            if (verb is null) continue;
+                            var answer = verb.Form(m.Form.Tense, m.Form.Person) ?? "";
+                            var why = VerbExplain.Mistake(verb, m.Form.Tense, m.Form.Person, m.Given, m.Grade);
+                            <div class="ls-mistake">
+                                <div class="ls-mistake-line" lang="es">
+                                    <span class="ls-gave">@(string.IsNullOrWhiteSpace(m.Given) ? "(no answer)" : m.Given)</span>
+                                    <span aria-hidden="true">→</span>
+                                    <strong>@answer</strong>
+                                </div>
+                                @if (why.Count > 0)
+                                {
+                                    <p>@RuleText.Render(why[0])</p>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                <CascadingValue Value="Book" IsFixed="true">
+                    <div class="vr">
+                        <RuleBlocksView Blocks="L.Intro" />
+                    </div>
+                </CascadingValue>
+                <button type="button" class="primary wide" @onclick="L.Continue">@(L.Attempt > 1 ? "Practise again" : "Got it")</button>
+            </section>
+            break;
+
+        case LessonRound.Step.Spot:
+            <section class="ls-card">
+                <h3 class="ls-h3">In real sentences</h3>
+                <p class="list-hint">The highlighted verbs follow this lesson's rule.</p>
+                <CascadingValue Value="Book" IsFixed="true">
+                    <RuleBlocksView Blocks="SpotBlocks" />
+                </CascadingValue>
+                <button type="button" class="primary wide" @onclick="L.Continue">Next: who is it?</button>
+            </section>
+            break;
+
+        case LessonRound.Step.Recognise:
+            @if (L.RecIndex < L.Recognise.Count)
+            {
+                var q = L.Recognise[L.RecIndex];
+                var persons = VerbGrammar.PersonsFor(q.Tense);
+                var picked = L.RecPicked;
+                var shown = (persons[q.Person].Negative ? "no " : "") + q.Form;
+                <section class="ls-card">
+                    <div class="vp-tense">@($"Who is it? {L.RecIndex + 1} of {L.Recognise.Count}")</div>
+                    <div class="ls-form" lang="es">@shown</div>
+                    <div class="ls-form-en"><span lang="es">@q.Verb.Inf</span>: @q.Verb.En</div>
+                    <div class="choices ls-who" role="group" aria-label="Who does it?">
+                        @foreach (var o in q.Options)
+                        {
+                            var opt = o;
+                            var label = VerbCompare.Short(q.Tense, opt);
+                            if (picked is null)
+                            {
+                                <button type="button" class="choice" @onclick="() => L.PickWho(opt)">@label</button>
+                            }
+                            else
+                            {
+                                <div class="choice @(q.Right.Contains(opt) ? "right" : opt == picked ? "wrong" : "dim")">@label</div>
+                            }
+                        }
+                    </div>
+                    @if (picked is { } pk)
+                    {
+                        var ok = q.Right.Contains(pk);
+                        <div class="game-feedback @(ok ? "ok" : "no")" role="status">
+                            <span class="fb-icon" aria-hidden="true">@(ok ? "✓" : "✗")</span>
+                            <span>@RuleText.Render(L.WhoClue(q))</span>
+                        </div>
+                        <button type="button" class="primary wide" @onclick="L.NextWho">Continue</button>
+                    }
+                </section>
+            }
+            break;
+
+        case LessonRound.Step.Make:
+            @if (L.Practice is { } practice)
+            {
+                @if (practice.Done)
+                {
+                    <section class="ls-card ls-center">
+                        <p>@($"{practice.Results.Count(r => r.Grade == Grade.Right)} of {practice.Results.Count} right.")</p>
+                        <button type="button" class="primary wide" @onclick="Finish">See how it went</button>
+                    </section>
+                }
+                else
+                {
+                    <VerbPractice @key="practice" R="practice" OnSaved="() => OnSaved.InvokeAsync()" OnClose="Finish"
+                                  CanSpeak="CanSpeak" Speak="Speak" />
+                }
+            }
+            break;
+
+        case LessonRound.Step.Result:
+            <section class="ls-card ls-center">
+                <div class="done-title">@(L.Passed ? "¡Lección hecha!" : "Casi")</div>
+                <div class="tst-score @(L.Passed ? "pass" : "")">@($"{(int)Math.Round(L.Score * 100)}%")</div>
+                @if (L.Passed)
+                {
+                    <p>@($"Lesson {L.Lesson.Number} done. These forms now come back for review{(L.VerbsInCards ? ", here and on the Cards tab" : " on the Path page")}.")</p>
+                    @if (NextLesson is { } next)
+                    {
+                        <p class="ls-next-up">@($"Next: {next.FullTitle}")</p>
+                        <button type="button" class="primary wide" @onclick="() => OnNext.InvokeAsync(next)">Next lesson</button>
+                    }
+                    <button type="button" class="tool" @onclick="() => OnClose.InvokeAsync()">Back to the path</button>
+                }
+                else
+                {
+                    <p>@($"{(int)Math.Round(VerbPath.PassShare * 100)}% passes. Let's go over it once more, with what went wrong.")</p>
+                    <button type="button" class="primary wide" @onclick="L.Retry">Go over it again</button>
+                    <button type="button" class="tool" @onclick="() => OnClose.InvokeAsync()">Later</button>
+                }
+            </section>
+            break;
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public LessonRound L { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbBook Book { get; set; } = default!;
+    /// <summary>The lesson after this one on the path (null at the end).</summary>
+    [Parameter] public VerbLesson? NextLesson { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<VerbLesson> OnNext { get; set; }
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    private IReadOnlyList<RuleBlock> SpotBlocks => [new RuleStoryLines(L.Spot)];
+
+    private static string StepName(LessonRound.Step s) => s switch
+    {
+        LessonRound.Step.Learn => "Learn",
+        LessonRound.Step.Spot => "Examples",
+        LessonRound.Step.Recognise => "Recognise",
+        LessonRound.Step.Make => "Practise",
+        _ => "Done",
+    };
+
+    private async Task Finish()
+    {
+        L.FinishPractice();
+        await OnSaved.InvokeAsync();
+    }
+}

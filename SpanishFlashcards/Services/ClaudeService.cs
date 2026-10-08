@@ -10,6 +10,9 @@ namespace SpanishFlashcards.Services;
 /// <summary>What a translation request gave: the translation, or what went wrong (and whether the key is the problem).</summary>
 public sealed record TranslateOutcome(TextTranslation? Translation, string? Error, bool KeyProblem = false, double Cost = 0);
 
+/// <summary>What a story request gave: the story as a text (with its translation), or what went wrong.</summary>
+public sealed record StoryOutcome(SavedText? Text, string? Error, bool KeyProblem = false, double Cost = 0);
+
 /// <summary>
 /// Translates a Read text with Claude (the Messages API), called straight from the browser with your own key
 /// (Settings → Translation with Claude). The answer is line by line, so it can sit under each line of the text,
@@ -59,7 +62,24 @@ public sealed partial class ClaudeService(HttpClient http)
 
         // Enough room for the English (about as long as the Spanish) and the notes.
         var maxTokens = Math.Clamp(text.Text.Length / 2 + 2500, 3000, 16000);
-        var request = new MessagesRequest(model, maxTokens, SystemPrompt, [new Message("user", body.ToString())]);
+        var (reply, failure, cost) = await AskAsync(key, model, SystemPrompt, body.ToString(), maxTokens,
+            "This text is too long to translate in one go.", "Claude didn't translate this text.");
+        if (failure is not null) return failure;
+
+        var translation = Read(reply!, lines, model);
+        return translation is null
+            ? new(null, "Claude's answer couldn't be read. Try again.", Cost: cost)
+            : new(translation, null, Cost: cost);
+    }
+
+    /// <summary>
+    /// One request to the Messages API. Returns Claude's text, or a failure to show (with what it cost, if
+    /// Claude got as far as answering).
+    /// </summary>
+    private async Task<(string? Reply, TranslateOutcome? Failure, double Cost)> AskAsync(
+        string key, string model, string system, string user, int maxTokens, string tooLong, string refused)
+    {
+        var request = new MessagesRequest(model, maxTokens, system, [new Message("user", user)]);
 
         using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint) { Content = JsonContent.Create(request, options: Json) };
         req.Headers.Add("x-api-key", key.Trim());
@@ -78,27 +98,82 @@ public sealed partial class ClaudeService(HttpClient http)
         }
         catch (Exception)
         {
-            return new(null, "Couldn't reach Claude. Check your connection and try again.");
+            return (null, new TranslateOutcome(null, "Couldn't reach Claude. Check your connection and try again."), 0);
         }
 
-        if ((int)status is < 200 or > 299) return ErrorFor(status, json);
+        if ((int)status is < 200 or > 299) return (null, ErrorFor(status, json), 0);
 
         MessagesResponse? answer;
         try { answer = JsonSerializer.Deserialize<MessagesResponse>(json, Json); }
         catch (JsonException) { answer = null; }
-        if (answer is null) return new(null, "Claude's answer couldn't be read. Try again.");
+        if (answer is null) return (null, new TranslateOutcome(null, "Claude's answer couldn't be read. Try again."), 0);
 
         var cost = CostOf(model, answer.Usage);
-        if (answer.StopReason == "max_tokens")
-            return new(null, "This text is too long to translate in one go.", Cost: cost);
-        if (answer.StopReason == "refusal")
-            return new(null, "Claude didn't translate this text.", Cost: cost);
+        if (answer.StopReason == "max_tokens") return (null, new TranslateOutcome(null, tooLong, Cost: cost), cost);
+        if (answer.StopReason == "refusal") return (null, new TranslateOutcome(null, refused, Cost: cost), cost);
 
         var reply = string.Concat(answer.Content?.Where(c => c.Type == "text").Select(c => c.Text) ?? []);
-        var translation = Read(reply, lines, model);
-        return translation is null
-            ? new(null, "Claude's answer couldn't be read. Try again.", Cost: cost)
-            : new(translation, null, Cost: cost);
+        return (reply, null, cost);
+    }
+
+    // ------------------------------------------------------------------ a story with your words
+
+    private const string StoryPrompt = """
+        You write short reading practice in Spanish for an adult learning Spanish.
+
+        Write one short story or scene, 6 to 10 sentences and about 80 to 140 words, that uses every target word at least once, in whatever form fits (conjugated, plural, feminine). Use each target word in the meaning given. Keep everything else easy: mostly very common words and the words they already know; the present, preterite, imperfect and "ir a" are all fine. Make it a real little story with something happening, about everyday adult life, not a list of unrelated sentences. Put each sentence on its own line, with a natural English translation of that sentence.
+
+        For each target word, give the form you used and its meaning in the story. Give the story a short Spanish title. Write plain English and don't use em dashes.
+
+        Reply with only this JSON and nothing before or after it:
+        {"title": "...", "lines": [{"es": "...", "en": "..."}], "words": [{"word": "...", "form": "...", "en": "..."}]}
+        """;
+
+    /// <param name="targets">The words to practise: Spanish and English.</param>
+    /// <param name="known">Words they know well (to lean on), Spanish only.</param>
+    public async Task<StoryOutcome> WriteStoryAsync(IReadOnlyList<(string Es, string En)> targets, IReadOnlyList<string> known,
+                                                    string? topic, bool vosotros, string key, string model)
+    {
+        var user = new StringBuilder();
+        user.Append("Target words (the ones they're learning now):\n");
+        foreach (var (es, en) in targets) user.Append("- ").Append(es).Append(" (").Append(en).Append(")\n");
+        if (known.Count > 0) user.Append("\nWords they know well: ").Append(string.Join(", ", known)).Append('\n');
+        if (!string.IsNullOrWhiteSpace(topic)) user.Append("\nWhat the story should be about: ").Append(topic.Trim()).Append('\n');
+        user.Append(vosotros ? "\nSpain or Latin American Spanish are both fine.\n" : "\nUse Latin American Spanish: ustedes, not vosotros.\n");
+
+        var (reply, failure, cost) = await AskAsync(key, model, StoryPrompt, user.ToString(), 3000,
+            "The story came out too long. Try again.", "Claude didn't write this story. Try a different topic.");
+        if (failure is not null) return new(null, failure.Error, failure.KeyProblem, failure.Cost);
+
+        var start = reply!.IndexOf('{');
+        var end = reply.LastIndexOf('}');
+        StoryJson? r = null;
+        if (start >= 0 && end > start)
+        {
+            try { r = JsonSerializer.Deserialize<StoryJson>(reply[start..(end + 1)], Json); }
+            catch (JsonException) { r = null; }
+        }
+        var lines = (r?.Lines ?? []).Where(l => !string.IsNullOrWhiteSpace(l.Es)).ToList();
+        if (lines.Count == 0) return new(null, "Claude's answer couldn't be read. Try again.", Cost: cost);
+
+        var title = string.IsNullOrWhiteSpace(r!.Title) ? "Una historia" : Clean(r.Title);
+        var text = new SavedText
+        {
+            Title = title.Length > 80 ? title[..80] : title,
+            Text = string.Join('\n', lines.Select(l => l.Es!.Trim().Replace("\n", " "))),
+            Translation = new TextTranslation
+            {
+                Lines = lines.Select(l => Clean(l.En ?? "")).ToList(),
+                Notes = (r.Words ?? [])
+                    .Select(w => (Es: string.IsNullOrWhiteSpace(w.Form) ? w.Word : w.Form, w.En))
+                    .Where(w => !string.IsNullOrWhiteSpace(w.Es) && !string.IsNullOrWhiteSpace(w.En))
+                    .Select(w => new TranslationNote { Es = w.Es!.Trim(), En = Clean(w.En!) })
+                    .ToList(),
+                Model = model,
+                Made = DateTime.UtcNow,
+            },
+        };
+        return new(text, null, Cost: cost);
     }
 
     /// <summary>The JSON in Claude's reply, turned into one English line per line of the text.</summary>
@@ -169,7 +244,7 @@ public sealed partial class ClaudeService(HttpClient http)
                 new(null, "Your Claude credit has run out. Add credit in the Claude Console.", KeyProblem: true),
             429 => new(null, "Too many requests, or your spending limit was reached. Try again in a minute.", KeyProblem: false),
             500 or 529 or 503 => new(null, "Claude is busy right now. Try again in a minute."),
-            _ => new(null, $"Claude couldn't translate it ({message ?? type ?? $"error {(int)status}"}).")
+            _ => new(null, $"Claude couldn't do this ({message ?? type ?? $"error {(int)status}"}).")
         };
     }
 
@@ -227,6 +302,26 @@ public sealed partial class ClaudeService(HttpClient http)
     }
 
     // ---- the JSON Claude is asked to reply with ----
+
+    private sealed class StoryJson
+    {
+        public string? Title { get; set; }
+        public List<StoryLine>? Lines { get; set; }
+        public List<StoryWord>? Words { get; set; }
+    }
+
+    private sealed class StoryLine
+    {
+        public string? Es { get; set; }
+        public string? En { get; set; }
+    }
+
+    private sealed class StoryWord
+    {
+        public string? Word { get; set; }
+        public string? Form { get; set; }
+        public string? En { get; set; }
+    }
 
     private sealed class ReplyJson
     {

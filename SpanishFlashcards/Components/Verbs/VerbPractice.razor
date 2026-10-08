@@ -115,6 +115,16 @@
                 </span>
             </div>
 
+            @if (grade != Grade.Right && R.Why.Count > 0)
+            {
+                <div class="vp-why" role="note">
+                    <div class="vp-why-label">Why</div>
+                    @foreach (var line in R.Why)
+                    {
+                        <p>@RuleText.Render(line)</p>
+                    }
+                </div>
+            }
             @if (grade != Grade.Right)
             {
                 <ConjugationTable Verb="q.Verb" Tense="@q.Form.Tense" Focus="q.Form.Person" />

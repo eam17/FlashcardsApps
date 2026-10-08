@@ -2,6 +2,7 @@
 @inject WordRepository Repo
 @inject ProgressStore Store
 @inject IJSRuntime JS
+@inject VerbRepository VerbRepo
 
 <PageTitle>Palabras · Spanish flashcards</PageTitle>
 
@@ -94,6 +95,7 @@ else
                 var queue = onExtra ? extraQueue : studyQueue;
                 var waitFor = onExtra ? null : WaitingFor(studyQueue);
                 var card = waitFor is null ? CurrentCard(queue) : null;
+                var verbsDue = VerbsDue;
 
                 <div class="status-row @(onExtra ? "extra" : "")">
                     <span class="status-text">
@@ -110,6 +112,7 @@ else
                                 ? "Reviews done"
                                 : $"{groupRequired} reviews left";
                             var learningText = learningN > 0 ? $" · {learningN} learning" : "";
+                            if (verbsDue > 0) learningText += $" · {verbsDue} verb {(verbsDue == 1 ? "form" : "forms")} due";
                             var bonusText = bonusN > 0 ? $" · {bonusN} bonus reviews" : "";
                             var checkN = words.Count(w => IsCheckIn(State(w)));
                             var checkText = checkN > 0 ? $" · {checkN} {(checkN == 1 ? "check-in" : "check-ins")}" : "";
@@ -118,7 +121,23 @@ else
                     </span>
                 </div>
 
-                @if (waitFor is not null && State(waitFor) is { DueAt: { } waitDue })
+                @if (verbRound is not null && verbBook is not null)
+                {
+                    @* Verb forms due for review, after the words (Settings → Verbs). *@
+                    <div class="cards-verb-review">
+                    <div class="ls-head cards-verbs-head">
+                        <div class="ls-head-text">
+                            <div class="ls-kicker">Verbs</div>
+                            <h2 class="ls-title">Verb forms due</h2>
+                        </div>
+                        <button type="button" class="vb-resume-x" aria-label="Close the verb review" title="Close" @onclick="CloseVerbRound">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                        </button>
+                    </div>
+                    <VerbPractice @key="verbRound" R="verbRound" OnSaved="SaveProgress" OnClose="CloseVerbRound" CanSpeak="canSpeak" Speak="Speak" />
+                    </div>
+                }
+                else if (waitFor is not null && State(waitFor) is { DueAt: { } waitDue })
                 {
                     if (wakeFor != waitDue) { wakeFor = waitDue; _ = WakeAt(waitDue); }
                     <div class="done">
@@ -126,6 +145,18 @@ else
                         <p>@WaitText(waitFor, waitDue)</p>
                         <button type="button" class="tool" @onclick="() => { waitSkipped = waitFor.Es; currentId = waitFor.Es; }">Show it now</button>
                     </div>
+                    @if (verbsDue > 0)
+                    {
+                        <section class="cards-verbs">
+                            <div class="cards-verbs-text">
+                                <span class="cards-verbs-title">@($"While you wait: {verbsDue} verb {(verbsDue == 1 ? "form" : "forms")} due")</span>
+                                <span class="cards-verbs-sub">A quick verb review fits in nicely here.</span>
+                            </div>
+                            <div class="cards-verbs-actions">
+                                <button type="button" class="primary" @onclick="StartVerbRound">Review verbs</button>
+                            </div>
+                        </section>
+                    }
                 }
                 else if (card is not null)
                 {
@@ -352,6 +383,19 @@ else
                         ? words.Select(State).Where(s => Srs.HasCheckInLater(s, DateTime.UtcNow, today)).Select(s => s!.CheckIn!.Value).ToList()
                         : new List<DateTime>();
                     if (laterChecks.Count > 0 && wakeFor != laterChecks.Min()) { wakeFor = laterChecks.Min(); _ = WakeAt(laterChecks.Min()); }
+                    @if (verbsDue > 0 && !verbsLater)
+                    {
+                        <section class="cards-verbs">
+                            <div class="cards-verbs-text">
+                                <span class="cards-verbs-title">@($"One more thing: {verbsDue} verb {(verbsDue == 1 ? "form" : "forms")} due")</span>
+                                <span class="cards-verbs-sub">Forms you've practised on the Verbs tab, back for a quick review. About a minute.</span>
+                            </div>
+                            <div class="cards-verbs-actions">
+                                <button type="button" class="primary" @onclick="StartVerbRound">Review verbs</button>
+                                <button type="button" class="tool" @onclick="() => verbsLater = true">Later</button>
+                            </div>
+                        </section>
+                    }
                     <div class="done">
                         <div class="done-title">¡Muy bien!</div>
                         <p>
@@ -533,6 +577,11 @@ else
                             <span>Include <em lang="es">vosotros</em></span>
                         </label>
                         <p><em lang="es">Vosotros</em> (you all, informal) is used in Spain; Latin America says <em lang="es">ustedes</em> instead. Turn it off to hide it from the verb tables, practice, tests and scores. Your progress on it is kept.</p>
+                        <label class="check-row">
+                            <input type="checkbox" @bind="progress.VerbsInCards" @bind:after="SaveProgress" />
+                            <span>Verb reviews on the Cards tab</span>
+                        </label>
+                        <p>Verb forms you've practised come back on the Cards tab when they're due, after your words, so you don't have to remember to review them.</p>
                     </section>
 
                     <section class="set-card">
@@ -576,7 +625,7 @@ else
 
                     <section class="set-card" id="set-claude">
                         <h2><label for="claude-key">Translation with Claude</label></h2>
-                        <p>Texts and songs on the Read tab can be translated by Claude, line by line under the Spanish, with notes on slang, idioms and grammar. It needs your own Claude API key: make one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a> and add some credit there (it's billed separately from a Claude subscription, and new accounts get a little free credit). Setting a monthly spend limit there is a good idea. The key is kept only in this browser and only sent to Claude, never in backups or exports.</p>
+                        <p>Texts and songs on the Read tab can be translated by Claude, line by line under the Spanish, with notes on slang, idioms and grammar, and Claude can write short stories with the words you're learning. It needs your own Claude API key: make one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a> and add some credit there (it's billed separately from a Claude subscription, and new accounts get a little free credit). Setting a monthly spend limit there is a good idea. The key is kept only in this browser and only sent to Claude, never in backups or exports.</p>
                         @if (claudeKeyEnd is not null)
                         {
                             <p class="small">@ClaudeUsageText</p>
@@ -596,7 +645,7 @@ else
                         }
                         <h3><label for="claude-model">Model</label></h3>
                         <select id="claude-model" class="small-select" @bind="progress.TranslateModel" @bind:after="SaveProgress">
-                            <option value="claude-haiku-5-5">Claude Haiku 5.5: about a tenth of a cent a song</option>
+                            <option value="claude-haiku-5-5">Claude Haiku 5.5: about a tenth of a cent a song or story</option>
                             <option value="claude-sonnet-5-5">Claude Sonnet 5.5: better with slang and wordplay, 1 to 3 cents a song</option>
                         </select>
                     </section>
@@ -839,7 +888,39 @@ else
         if (progress.Group is { } g && groups.Any(x => x.Id == g)) groupId = g;
         VerbSettings.Vosotros = progress.ShowVosotros;
         if (progress.PracticeDirection == "en") progress.PracticeDirection = "auto"; // the two options became one
+        _ = LoadVerbs();
     }
+
+    // ----- verb reviews on the Cards tab -----
+
+    private VerbBook? verbBook;
+    private VerbNode? verbTree;
+    private PracticeRound? verbRound;   // the verb review on screen (after the words)
+    private bool verbsLater;            // "Later" on the verb prompt, for this visit
+
+    /// <summary>The verbs load in the background; Cards works without them.</summary>
+    private async Task LoadVerbs()
+    {
+        try
+        {
+            (verbBook, verbTree) = await VerbRepo.GetAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception) { }
+    }
+
+    /// <summary>Verb forms due for review (0 when they're not wanted on the Cards tab).</summary>
+    private int VerbsDue =>
+        progress.VerbsInCards && verbTree is not null ? VerbPath.Due(verbTree, progress.VerbSkills, DateTime.UtcNow).Count : 0;
+
+    private void StartVerbRound()
+    {
+        if (verbBook is null || verbTree is null) return;
+        var root = verbTree;
+        verbRound = new PracticeRound(root, verbBook, progress, () => VerbPath.DueSession(root, progress.VerbSkills, DateTime.UtcNow));
+    }
+
+    private void CloseVerbRound() => verbRound = null;
 
     /// <summary>The word list plus your own words (Read tab), and the groups (including one per text).</summary>
     private void RebuildWords()
@@ -1748,10 +1829,14 @@ else
         get
         {
             var n = progress.ClaudeTranslations;
+            var m = progress.ClaudeStories;
             var spent = progress.ClaudeSpend < 0.01 ? "less than a cent" : $"about ${progress.ClaudeSpend:0.00}";
-            return n == 0
-                ? $"Key saved (ends in {claudeKeyEnd}). No translations yet."
-                : $"Key saved (ends in {claudeKeyEnd}). {n} {(n == 1 ? "translation" : "translations")} from this device, {spent} in all.";
+            var done = new List<string>();
+            if (n > 0) done.Add($"{n} {(n == 1 ? "translation" : "translations")}");
+            if (m > 0) done.Add($"{m} {(m == 1 ? "story" : "stories")}");
+            return done.Count == 0
+                ? $"Key saved (ends in {claudeKeyEnd}). Nothing made with it yet."
+                : $"Key saved (ends in {claudeKeyEnd}). {string.Join(" and ", done)} from this device, {spent} in all.";
         }
     }
 
@@ -1872,7 +1957,7 @@ else
         var log = await Store.ReadLogAsync();
         var scheduler = new ExportScheduler { Retention = progress.Retention, Parameters = progress.FsrsParameters };
         var json = ProgressTransfer.ToJson(words!, progress.Cards, progress.VerbSkills, progress.VerbTests, progress.Texts,
-                                           progress.MyWords, scheduler, log);
+                                           progress.MyWords, scheduler, log, progress.VerbLessons);
         await JS.InvokeVoidAsync("palabras.downloadText", $"palabras-progress-{DateTime.Now:yyyy-MM-dd}.json", "application/json", json);
         var verbForms = progress.VerbSkills.Values.Count(VerbSrs.IsSeen);
         ShowTransfer($"Exported {LearnedCount} learned and {words!.Count - LearnedCount} not-yet-learned words, and {verbForms} practised verb forms.");
@@ -1906,6 +1991,7 @@ else
             {
                 progress.VerbSkills = result.VerbSkills;
                 progress.VerbTests = result.VerbTests ?? new();
+                progress.VerbLessons = ProgressTransfer.ReadLessons(text, e.File.Name) ?? new();
             }
             // The schedule settings and the review history (Export JSON from October 2026).
             var (scheduler, importedLog) = ProgressTransfer.ReadHistory(text, e.File.Name);
@@ -1956,6 +2042,8 @@ else
         progress.VerbSkills = new();
         progress.VerbRotation = new();
         progress.VerbTests = new();
+        progress.VerbLessons = new();
+        progress.VerbPlacementDone = false;
         progress.Order = null;
         progress.ReviewsDoneToday = 0;
         progress.NewDoneToday = 0;

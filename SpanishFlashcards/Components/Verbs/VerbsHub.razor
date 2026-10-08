@@ -1,4 +1,6 @@
-@* The Verbs tab: tense → type → group → verb. Every item has Overview, Rules and Practice, and a progress bar. *@
+@* The Verbs tab. Path (the default): guided lessons in learning order, reviews, the placement check and the map.
+   Browse: tense → type → group → verb, where every item has Overview, Rules and Practice, and a progress bar.
+   Grid and Decode as before. *@
 @inject VerbRepository VerbRepo
 
 @if (book is null || tree is null)
@@ -30,12 +32,46 @@ else
             </div>
         }
         <div class="segmented vb-mode" role="tablist" aria-label="Show verbs as">
-            <button type="button" role="tab" class="seg @(mode == Mode.Tree ? "on" : "")" aria-selected="@(mode == Mode.Tree ? "true" : "false")" @onclick="() => mode = Mode.Tree">Tree</button>
+            <button type="button" role="tab" class="seg @(mode == Mode.Path ? "on" : "")" aria-selected="@(mode == Mode.Path ? "true" : "false")" @onclick="() => mode = Mode.Path">Path</button>
+            <button type="button" role="tab" class="seg @(mode == Mode.Tree ? "on" : "")" aria-selected="@(mode == Mode.Tree ? "true" : "false")" @onclick="() => mode = Mode.Tree">Browse</button>
             <button type="button" role="tab" class="seg @(mode == Mode.Grid ? "on" : "")" aria-selected="@(mode == Mode.Grid ? "true" : "false")" @onclick="() => mode = Mode.Grid">Grid</button>
             <button type="button" role="tab" class="seg @(mode == Mode.Decode ? "on" : "")" aria-selected="@(mode == Mode.Decode ? "true" : "false")" @onclick="() => mode = Mode.Decode">Decode</button>
         </div>
 
-        @if (mode == Mode.Decode)
+        @if (mode == Mode.Path)
+        {
+            var lessons = Lessons;
+            @if (pathScreen == PathScreen.Lesson && lessonRound is not null)
+            {
+                <LessonView @key="lessonRound" L="lessonRound" Book="book" NextLesson="VerbPath.Next(lessons, Progress.VerbLessons, Progress.VerbSkills, Progress.VerbTests, now)"
+                            OnSaved="Saved" OnClose="() => pathScreen = PathScreen.Map" OnNext="StartLesson" CanSpeak="CanSpeak" Speak="Speak" />
+            }
+            else if (pathScreen == PathScreen.Placement && placementRound is not null)
+            {
+                <VerbPlacement P="placementRound" NextLesson="VerbPath.Next(lessons, Progress.VerbLessons, Progress.VerbSkills, Progress.VerbTests, now)"
+                               OnSaved="Saved" OnClose="() => pathScreen = PathScreen.Map" />
+            }
+            else if (pathScreen == PathScreen.Review && dueRound is not null)
+            {
+                <div class="ls-head">
+                    <div class="ls-head-text">
+                        <div class="ls-kicker">Review</div>
+                        <h2 class="ls-title">Verb forms due</h2>
+                    </div>
+                    <button type="button" class="vb-resume-x" aria-label="Close the review" title="Close" @onclick="() => pathScreen = PathScreen.Map">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                    </button>
+                </div>
+                <VerbPractice @key="dueRound" R="dueRound" OnSaved="Saved" OnClose="() => pathScreen = PathScreen.Map" CanSpeak="CanSpeak" Speak="Speak" />
+            }
+            else
+            {
+                <VerbPathView Lessons="lessons" Progress="Progress" DueCount="VerbPath.Due(tree, Progress.VerbSkills, now).Count"
+                              Current="lessonRound" OnStartLesson="StartLesson" OnReview="StartReview" OnPlacement="StartPlacement"
+                              OnBrowse="BrowseFromPath" OnDecode="RareInDecode" />
+            }
+        }
+        else if (mode == Mode.Decode)
         {
             <DecodeView Book="book" Progress="Progress" OnSaved="Saved" CanSpeak="CanSpeak" Speak="Speak" Tree="tree" OnOpenRules="OpenRulesFromDecode" />
         }
@@ -503,10 +539,70 @@ else
         await Saved();
     }
 
-    // Tree, grid or decode view of the Verbs tab, kept while the app is open.
-    private enum Mode { Tree, Grid, Decode }
+    // Path, tree (Browse), grid or decode view of the Verbs tab, kept while the app is open.
+    private enum Mode { Path, Tree, Grid, Decode }
 
-    private static Mode mode = Mode.Tree;
+    private static Mode mode = Mode.Path;
+
+    // ------------------------------------------------------------------ the path
+
+    private enum PathScreen { Map, Lesson, Placement, Review }
+
+    // Kept while the app is open, like practice rounds: leaving a lesson keeps your place in it.
+    private static PathScreen pathScreen = PathScreen.Map;
+    private static LessonRound? lessonRound;
+    private static PlacementRound? placementRound;
+    private static PracticeRound? dueRound;
+
+    private List<VerbLesson>? lessonList;
+    private bool lessonsVosotros;
+
+    /// <summary>The lessons, in path order (rebuilt when the vosotros setting changes).</summary>
+    private List<VerbLesson> Lessons
+    {
+        get
+        {
+            if (lessonList is null || lessonsVosotros != VerbSettings.Vosotros)
+            {
+                lessonList = VerbPath.Build(tree!);
+                lessonsVosotros = VerbSettings.Vosotros;
+            }
+            return lessonList;
+        }
+    }
+
+    /// <summary>Open a lesson: the one in progress if it's this one, otherwise from the start.</summary>
+    private void StartLesson(VerbLesson lesson)
+    {
+        // A new round for another lesson, or to redo a passed one; a lesson you didn't pass keeps its retry.
+        if (lessonRound is null || lessonRound.Lesson.Node.Id != lesson.Node.Id
+            || (lessonRound.Current == LessonRound.Step.Result && lessonRound.Passed))
+            lessonRound = new LessonRound(lesson, book!, Progress);
+        pathScreen = PathScreen.Lesson;
+    }
+
+    private void StartPlacement()
+    {
+        if (placementRound is null || placementRound.Done) placementRound = new PlacementRound(Lessons, book!, Progress);
+        pathScreen = PathScreen.Placement;
+    }
+
+    /// <summary>Review the verb forms that are due, across every tense (rounds of up to 10).</summary>
+    private void StartReview()
+    {
+        var root = tree!;
+        if (dueRound is not { InProgress: true })
+            dueRound = new PracticeRound(root, book!, Progress, () => VerbPath.DueSession(root, Progress.VerbSkills, DateTime.UtcNow));
+        pathScreen = PathScreen.Review;
+    }
+
+    private void BrowseFromPath(VerbNode? node)
+    {
+        mode = Mode.Tree;
+        Go(node ?? tree);
+    }
+
+    private Task RareInDecode() => FocusDecode(VerbGrammar.Tenses.Where(t => t.Stage == 4).Select(t => t.Id));
 
     private void OpenFromGrid(VerbNode node)
     {

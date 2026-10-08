@@ -441,6 +441,9 @@ public static class VerbRules
 
     // ============================================================== groups
 
+    /// <summary>The one-line rule for a group of forms ("o-ue", "go"…) in a tense (empty when there's none).</summary>
+    public static string WhyRule(string why, string t) => GroupSummary(why, t);
+
     private static string GroupSummary(string sub, string t) => sub switch
     {
         "e-ie" => "The *e* of the stem becomes *ie*: *quiero, piensas*.",

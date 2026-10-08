@@ -1,0 +1,125 @@
+@* The placement check (PlacementRound): quick multiple choice along the path, to skip what you already know. *@
+
+<div class="ls">
+    <div class="ls-head">
+        <div class="ls-head-text">
+            <div class="ls-kicker">Placement check</div>
+            <h2 class="ls-title">@(P.Lesson is { } l && P.Started && !P.Done ? l.FullTitle : "Find where your path starts")</h2>
+        </div>
+        <button type="button" class="vb-resume-x" aria-label="Close the placement check" title="Close" @onclick="() => OnClose.InvokeAsync()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
+    </div>
+
+    @if (!P.Started)
+    {
+        <section class="ls-card">
+            <ul class="tst-intro-list">
+                <li>Quick multiple-choice questions, starting with the present and moving along the path.</li>
+                <li>Get a lesson's questions right and it's marked as done, so the path skips it.</li>
+                <li>Miss the start of a tense and the check moves on to the next one. Two in a row and it stops: that's where your path starts.</li>
+                <li>Stop whenever you like; what's checked so far is kept.</li>
+            </ul>
+            <button type="button" class="primary wide" @onclick="Start">Start</button>
+        </section>
+    }
+    else if (P.Done)
+    {
+        <section class="ls-card ls-center">
+            <div class="done-title">@(P.Placed.Count > 0 ? "¡Listo!" : "Empezamos desde el principio")</div>
+            <p>
+                @if (P.Placed.Count > 0)
+                {
+                    @($"{P.Placed.Count} {(P.Placed.Count == 1 ? "lesson" : "lessons")} marked as done from {P.Asked} questions.")
+                }
+                else
+                {
+                    @("No lessons skipped: the path starts at the beginning, and that's fine.")
+                }
+            </p>
+            @if (NextLesson is { } next)
+            {
+                <p class="ls-next-up">@($"Your path starts at lesson {next.Number}: {next.FullTitle}")</p>
+            }
+            <button type="button" class="primary wide" @onclick="() => OnClose.InvokeAsync()">Go to my path</button>
+        </section>
+    }
+    else if (P.Question is { } q)
+    {
+        var negative = q.Person.Negative;
+        <div class="vp-progress" aria-label="@($"Lesson {P.PositionText}")">
+            <div class="vp-progress-fill" style="width: @(P.LessonIndex * 100 / Math.Max(1, P.LessonCount))%"></div>
+        </div>
+        <div class="vp-card">
+            <div class="vp-tense">@q.Tense.Name</div>
+            <div class="vp-verb"><span lang="es">@q.Verb.Inf</span> <span class="vp-en">@q.Verb.En</span></div>
+            <div class="vp-person">@q.Person.Label</div>
+            <div class="vp-blank" lang="es">
+                @if (negative)
+                {
+                    <span>no </span>
+                }
+                @if (P.Answered)
+                {
+                    <span class="vp-answer">@q.Answer</span>
+                }
+                else
+                {
+                    <span class="vp-line">_____</span>
+                }
+            </div>
+        </div>
+        <div class="choices" role="group" aria-label="Choose the right form">
+            @foreach (var opt in q.Options)
+            {
+                var o = opt;
+                if (!P.Answered)
+                {
+                    <button type="button" class="choice es" lang="es" @onclick="() => Pick(o)">@o</button>
+                }
+                else
+                {
+                    var right = q.Answers.Any(a => string.Equals(a, o, StringComparison.OrdinalIgnoreCase));
+                    <div class="choice es @(right ? "right" : o == P.Picked ? "wrong" : "dim")" lang="es">@o</div>
+                }
+            }
+        </div>
+        @if (P.Answered)
+        {
+            <div class="game-feedback @(P.Right ? "ok" : "no")" role="status">
+                <span class="fb-icon" aria-hidden="true">@(P.Right ? "✓" : "✗")</span>
+                <span>@(P.Right ? "Right." : $"It's {(negative ? "no " : "")}{q.Answer}. This one goes on your path.")</span>
+            </div>
+            <button type="button" class="primary wide" @onclick="Next">Continue</button>
+        }
+        <button type="button" class="tool ls-stop" @onclick="Stop">Stop here</button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PlacementRound P { get; set; } = default!;
+    /// <summary>The first lesson not done (where the path starts now).</summary>
+    [Parameter] public VerbLesson? NextLesson { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private void Start() => P.Start();
+
+    private async Task Pick(string option)
+    {
+        P.Pick(option);
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task Next()
+    {
+        P.Next();
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task Stop()
+    {
+        P.Finish();
+        await OnSaved.InvokeAsync();
+    }
+}

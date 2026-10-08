@@ -8,11 +8,27 @@ public sealed class VerbRepository(HttpClient http, WordRepository words)
 {
     private VerbBook? _book;
     private VerbNode? _tree;
+    private Task<(VerbBook Book, VerbNode Tree)>? loading;
 
-    public async Task<(VerbBook Book, VerbNode Tree)> GetAsync()
+    /// <summary>Loads once: callers at the same time share one load (and so one tree).</summary>
+    public Task<(VerbBook Book, VerbNode Tree)> GetAsync()
     {
-        if (_book is not null && _tree is not null) return (_book, _tree);
+        if (_book is not null && _tree is not null) return Task.FromResult((_book, _tree));
+        return loading ??= LoadAsync();
+    }
 
+    private async Task<(VerbBook Book, VerbNode Tree)> LoadAsync()
+    {
+        try { return await Load(); }
+        catch
+        {
+            loading = null; // try again next time
+            throw;
+        }
+    }
+
+    private async Task<(VerbBook Book, VerbNode Tree)> Load()
+    {
         var file = await http.GetFromJsonAsync<VerbFile>("data/verbs.json") ?? new VerbFile();
         var ranks = (await words.GetAllAsync()).Where(w => w.Pos == "verb").ToDictionary(w => w.Es, w => w.Rank);
 

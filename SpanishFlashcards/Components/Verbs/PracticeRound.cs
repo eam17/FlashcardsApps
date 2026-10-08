@@ -11,15 +11,27 @@ namespace SpanishFlashcards.Components.Verbs;
 /// </summary>
 public sealed class PracticeRound : IVerbRound
 {
-    public sealed record Result(FormRef Form, Grade Grade);
+    /// <summary>One answer: the form, how it went, the verb it was asked with, and what you answered.</summary>
+    public sealed record Result(FormRef Form, Grade Grade, string Verb = "", string? Given = null);
 
-    public PracticeRound(VerbNode node, VerbBook book, Progress progress)
+    /// <param name="sessionSource">Where each round's questions come from (default: the node's own session; the
+    /// daily verb review passes the forms that are due).</param>
+    public PracticeRound(VerbNode node, VerbBook book, Progress progress, Func<List<PracticeItem>>? sessionSource = null)
     {
         Node = node;
         Book = book;
         Progress = progress;
+        this.sessionSource = sessionSource;
         Start();
     }
+
+    private readonly Func<List<PracticeItem>>? sessionSource;
+
+    /// <summary>What you answered to the current question (the option picked, or the letters spelled).</summary>
+    public string? Given { get; private set; }
+
+    /// <summary>Why the current answer was wrong (empty when it was right), in the rules markup.</summary>
+    public List<string> Why { get; private set; } = new();
 
     public VerbNode Node { get; }
     private VerbBook Book { get; }
@@ -55,7 +67,7 @@ public sealed class PracticeRound : IVerbRound
 
     public void Start()
     {
-        Session = VerbQuiz.BuildSession(Node, Progress.VerbSkills, DateTime.UtcNow);
+        Session = sessionSource?.Invoke() ?? VerbQuiz.BuildSession(Node, Progress.VerbSkills, DateTime.UtcNow);
         Results.Clear();
         requeued.Clear();
         Index = 0;
@@ -70,6 +82,8 @@ public sealed class PracticeRound : IVerbRound
         Answered = false;
         Picked = null;
         Matched = null;
+        Given = null;
+        Why = new();
         Spell = TileState.Empty;
         if (Index >= Session.Count)
         {
@@ -90,6 +104,7 @@ public sealed class PracticeRound : IVerbRound
     {
         if (Answered || Question is null) return false;
         Picked = option;
+        Given = option;
         Grade = IsAnswer(option) ? Grade.Right : Grade.Wrong;
         Matched = Grade == Grade.Right ? option : Question.Answer;
         Record(spelled: false);
@@ -100,6 +115,7 @@ public sealed class PracticeRound : IVerbRound
     public bool Check()
     {
         if (Answered || Question is null || !Spell.Any) return false;
+        Given = Spell.Typed;
         (Grade, Matched) = AnswerCheck.Check(Spell.Typed, Question.Answers, Question.Person.Negative);
         Record(spelled: true);
         return true;
@@ -112,7 +128,9 @@ public sealed class PracticeRound : IVerbRound
         var key = Question!.Form.Key;
         Progress.VerbSkills.TryGetValue(key, out var before);
         Progress.VerbSkills[key] = VerbSrs.Apply(before, Grade, spelled, DateTime.UtcNow);
-        Results.Add(new Result(Question.Form, Grade));
+        Results.Add(new Result(Question.Form, Grade, Question.Verb.Inf, Given));
+        if (Grade != Grade.Right)
+            Why = VerbExplain.Mistake(Question.Verb, Question.Form.Tense, Question.Form.Person, Given, Grade);
 
         // A form you missed comes back once more, a few questions later (sooner only if the round is ending).
         if (Grade != Grade.Right && requeued.Add(key))
