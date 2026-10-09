@@ -38,6 +38,12 @@ public sealed class Progress
     /// <summary>Recall cards: type the Spanish and have it checked (true), or say it and grade yourself.</summary>
     public bool TypeAnswers { get; set; } = true;
 
+    /// <summary>
+    /// How you answer in Spanish on recall cards: "tiles" (tap letter buttons), "type" (the keyboard) or "self"
+    /// (say it and grade yourself). Null on older progress: tiles if <see cref="TypeAnswers"/> was on, else self.
+    /// </summary>
+    public string? SpanishAnswer { get; set; }
+
     /// <summary>Words learned today come back once more a few hours later for a quick recall.</summary>
     public bool CheckIns { get; set; } = true;
 

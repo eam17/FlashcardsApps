@@ -168,7 +168,9 @@ else
                     var choiceMode = kind != ChoiceKind.None;
                     if (choiceMode) EnsureChoices(card, kind, state);
                     var showAnswer = mode == CardMode.Intro || flipped;
-                    var typing = progress.TypeAnswers && mode == CardMode.Recall && englishFirst;
+                    var typing = AnswerMode != "self" && mode == CardMode.Recall && englishFirst;
+                    var tiles = typing && AnswerMode == "tiles";
+                    if (tiles && !flipped) EnsureTiles(card, state);
                     var spanishVisible = showAnswer || !englishFirst;
                     var cloze = card.ClozeParts;
 
@@ -226,7 +228,7 @@ else
                                             @card.Example
                                         }
                                     </div>
-                                    <div class="card-hint">@(choiceMode ? "Pick the Spanish word below" : typing ? "Type the Spanish word below" : "Say the Spanish word, then tap to check")</div>
+                                    <div class="card-hint">@(choiceMode ? "Pick the Spanish word below" : tiles ? TilesHint(card) : typing ? "Type the Spanish word below" : "Say the Spanish word, then tap to check")</div>
                                 }
                                 else if (!showAnswer)
                                 {
@@ -324,6 +326,12 @@ else
                             <button type="button" class="primary wide" @onclick="() => ContinueAfterChoice(card)">
                                 @(picked?.Es == card.Es ? "Correct! Continue" : "Continue")
                             </button>
+                        }
+                        else if (tiles && !flipped && wordTiles is not null)
+                        {
+                            @* Spell the Spanish with letter buttons: the word's letters plus decoys (WordTiles). *@
+                            <TileSpeller State="wordTiles" OnCheck="() => CheckTiles(card)" />
+                            <button type="button" class="skip-link" @onclick="() => DontKnow(card)">I don't know it</button>
                         }
                         else if (typing && !flipped)
                         {
@@ -459,12 +467,13 @@ else
                     </section>
 
                     <section class="set-card">
-                        <h2>Answering in Spanish</h2>
-                        <label class="check-row">
-                            <input type="checkbox" @bind="progress.TypeAnswers" @bind:after="SaveProgress" />
-                            <span>Type the Spanish (checked for you)</span>
-                        </label>
-                        <p>Recalling the Spanish yourself is what really shows you know a word. With this on, you type it and the app checks it. A missing accent still counts as remembered (you'll see the right spelling); the wrong article or a one-letter slip counts as Hard. <strong>Count it as right</strong> is there if the check gets it wrong. Off: say it, show the answer and grade yourself.</p>
+                        <h2><label for="answer-mode">Answering in Spanish</label></h2>
+                        <select id="answer-mode" class="small-select" @bind="AnswerMode" @bind:after="SaveProgress">
+                            <option value="tiles">Tap the letters</option>
+                            <option value="type">Type it</option>
+                            <option value="self">Say it and grade yourself</option>
+                        </select>
+                        <p>Recalling the Spanish yourself is what really shows you know a word. <strong>Tap the letters</strong>: spell it with letter buttons, which include extra letters (accent twins and letters from look-alike words) so you still have to remember it. <strong>Type it</strong>: use the keyboard. Either way the app checks it: a missing accent still counts as remembered (you'll see the right spelling); the wrong article or a one-letter slip counts as Hard, and <strong>Count it as right</strong> is there if the check gets it wrong. <strong>Say it and grade yourself</strong>: show the answer and tap Forgot, Hard or Got it.</p>
                     </section>
 
                     <section class="set-card">
@@ -965,7 +974,7 @@ else
             timedCardKey = shownCardKey;
             try { await JS.InvokeVoidAsync("palabras.timerStart"); }
             catch (Exception) { }
-            if (progress.TypeAnswers) focusFor = "answer";
+            if (AnswerMode == "type") focusFor = "answer";
         }
         if (scrollTo is { } target && tab == Tab.Settings)
         {
@@ -1397,6 +1406,8 @@ else
         typedResult = null;
         typedOverride = false;
         typedSlow = false;
+        wordTiles = null;
+        tilesKey = null;
     }
 
     private void SetTab(Tab t)
@@ -1615,6 +1626,44 @@ else
         typedText += c;
         try { await JS.InvokeVoidAsync("palabras.focusById", "word-answer"); }
         catch (Exception) { }
+    }
+
+    // ----- spelling with letter buttons -----
+
+    /// <summary>"tiles", "type" or "self" (Settings → Answering in Spanish).</summary>
+    private string AnswerMode
+    {
+        get => progress.SpanishAnswer is "tiles" or "type" or "self" ? progress.SpanishAnswer : progress.TypeAnswers ? "tiles" : "self";
+        set
+        {
+            progress.SpanishAnswer = value;
+            progress.TypeAnswers = value != "self";
+        }
+    }
+
+    private TileState? wordTiles;
+    private string? tilesKey;
+
+    /// <summary>Builds the letter buttons once per card (so they don't reshuffle while you spell).</summary>
+    private void EnsureTiles(Word card, CardState? s)
+    {
+        var key = $"{card.Es}|{s?.Phase}|{s?.Step}|{answerCount}";
+        if (key == tilesKey && wordTiles is not null) return;
+        tilesKey = key;
+        wordTiles = new TileState(WordTiles.For(card, words!));
+    }
+
+    /// <summary>When the sentence uses another form (Hablo for hablar), say which one the letters spell.</summary>
+    private static string TilesHint(Word card) =>
+        !string.IsNullOrWhiteSpace(card.Form) && !string.Equals(card.Form.Trim(), WordTiles.Target(card), StringComparison.OrdinalIgnoreCase)
+            ? "Spell the dictionary form with the letters below"
+            : "Spell the Spanish word with the letters below";
+
+    private Task CheckTiles(Word card)
+    {
+        if (wordTiles is null) return Task.CompletedTask;
+        typedText = wordTiles.Typed;
+        return CheckTyped(card);
     }
 
     private async Task CheckTyped(Word card)
