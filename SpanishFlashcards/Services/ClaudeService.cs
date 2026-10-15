@@ -61,7 +61,7 @@ public sealed partial class ClaudeService(HttpClient http)
             body.Append(i + 1).Append(": ").Append(lines[i].Trim()).Append('\n');
 
         // Enough room for the English (about as long as the Spanish) and the notes.
-        var maxTokens = Math.Clamp(text.Text.Length / 2 + 2500, 3000, 16000);
+        var maxTokens = Math.Clamp(text.Text.Length * 2 + 4000, 8000, 32000);
         var (reply, failure, cost) = await AskAsync(key, model, SystemPrompt, body.ToString(), maxTokens,
             "This text is too long to translate in one go.", "Claude didn't translate this text.");
         if (failure is not null) return failure;
@@ -79,7 +79,7 @@ public sealed partial class ClaudeService(HttpClient http)
     private async Task<(string? Reply, TranslateOutcome? Failure, double Cost)> AskAsync(
         string key, string model, string system, string user, int maxTokens, string tooLong, string refused)
     {
-        var request = new MessagesRequest(model, maxTokens, system, [new Message("user", user)]);
+        var request = new MessagesRequest(model, maxTokens, system, [new Message("user", user)], ThinkingFor(model));
 
         using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint) { Content = JsonContent.Create(request, options: Json) };
         req.Headers.Add("x-api-key", key.Trim());
@@ -141,7 +141,7 @@ public sealed partial class ClaudeService(HttpClient http)
         if (!string.IsNullOrWhiteSpace(topic)) user.Append("\nWhat the story should be about: ").Append(topic.Trim()).Append('\n');
         user.Append(vosotros ? "\nSpain or Latin American Spanish are both fine.\n" : "\nUse Latin American Spanish: ustedes, not vosotros.\n");
 
-        var (reply, failure, cost) = await AskAsync(key, model, StoryPrompt, user.ToString(), 3000,
+        var (reply, failure, cost) = await AskAsync(key, model, StoryPrompt, user.ToString(), 8000,
             "The story came out too long. Try again.", "Claude didn't write this story. Try a different topic.");
         if (failure is not null) return new(null, failure.Error, failure.KeyProblem, failure.Cost);
 
@@ -259,12 +259,21 @@ public sealed partial class ClaudeService(HttpClient http)
         [property: JsonPropertyName("role")] string Role,
         [property: JsonPropertyName("content")] string Content);
 
+        private static Thinking? ThinkingFor(string model) => model switch
+    {
+        "claude-haiku-5-5" => new Thinking("disabled"),
+        "claude-sonnet-5-5" => new Thinking("between_tools"),
+        _ => null,
+    };
+
+    private sealed record Thinking([property: JsonPropertyName("type")] string Type);
+
     private sealed record MessagesRequest(
         [property: JsonPropertyName("model")] string Model,
         [property: JsonPropertyName("max_tokens")] int MaxTokens,
         [property: JsonPropertyName("system")] string System,
-        [property: JsonPropertyName("messages")] List<Message> Messages);
-
+        [property: JsonPropertyName("messages")] List<Message> Messages,
+        [property: JsonPropertyName("thinking")] Thinking? Thinking = null);
     private sealed class MessagesResponse
     {
         public List<ContentBlock>? Content { get; set; }
