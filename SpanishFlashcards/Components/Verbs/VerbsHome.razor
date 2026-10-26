@@ -1,0 +1,138 @@
+@* The Verbs tab's home: the Continue card (one tap for today's session), the placement check offer the first
+   time, and the units in order with their three meters. Everything else is under Explore. *@
+
+@{
+    var now = DateTime.UtcNow;
+    var states = VerbCourse.States(Kit, Progress);
+    var current = Kit.Units.FirstOrDefault(u => !states[u.Id].Solid);
+    var due = VerbCourse.DueCount(Kit, Progress, now);
+    var minutes = Progress.VerbSessionMinutes;
+    var running = Session is { Done: false, Kind: SessionRound.Mode.Continue or SessionRound.Mode.Placement or SessionRound.Mode.Unit };
+    var solid = states.Values.Count(s => s.Solid);
+}
+
+<div class="vh">
+    @if (!Progress.VerbsStarted && !running)
+    {
+        <section class="vb-next vh-start" aria-label="Getting started">
+            <div class="vb-next-kicker">Verbs, step by step</div>
+            <div class="vb-next-title">@($"{Kit.Units.Count} units, most useful first")</div>
+            <div class="vb-next-text">Each unit teaches one thing three ways: the rule, making the forms, and reading them in real Spanish, quickly. Know some already? A quick check skips what you know.</div>
+            <div class="vb-next-actions">
+                <button type="button" class="primary vb-next-go" @onclick="() => OnPlacement.InvokeAsync()">Check what I know</button>
+                <button type="button" class="tool" @onclick="() => OnJustStart.InvokeAsync()">Start from the beginning</button>
+            </div>
+            <p class="vh-note">The check takes 5 to 8 minutes, and you can stop it any time. Every unit also starts with a short check of its own.</p>
+        </section>
+    }
+    else
+    {
+        <section class="vb-next vh-continue" aria-label="Today">
+            @if (running)
+            {
+                <div class="vb-next-kicker">@(Session!.Kind == SessionRound.Mode.Placement ? "Placement check" : "Session in progress")</div>
+                <div class="vb-next-title">Pick up where you left off</div>
+                <div class="vb-next-text">@($"{Session.AnsweredCount} answered so far.")</div>
+                <div class="vb-next-actions">
+                    <button type="button" class="primary vb-next-go" @onclick="() => OnContinue.InvokeAsync()">Continue</button>
+                </div>
+            }
+            else if (current is null && due == 0)
+            {
+                <div class="vb-next-kicker">Today</div>
+                <div class="vb-next-title">All caught up</div>
+                <div class="vb-next-text">Every unit is solid and no reviews are due. A practice round keeps them quick.</div>
+                <div class="vb-next-actions">
+                    <button type="button" class="primary vb-next-go" @onclick="() => OnContinue.InvokeAsync()">Practise anyway</button>
+                </div>
+            }
+            else
+            {
+                <div class="vb-next-kicker">Today</div>
+                <div class="vb-next-title">@(current is null ? "Reviews" : current.Title)</div>
+                <div class="vb-next-text">@SummaryText(minutes, due, current)</div>
+                <div class="vb-next-actions">
+                    <button type="button" class="primary vb-next-go" @onclick="() => OnContinue.InvokeAsync()">Continue</button>
+                </div>
+            }
+        </section>
+    }
+
+    <section class="vh-units" aria-label="Your verbs">
+        <div class="vh-head">
+            <h2 class="rd-h">Your verbs</h2>
+            <span class="vh-sum">@($"{solid} of {Kit.Units.Count} solid")</span>
+        </div>
+        @foreach (var tier in Kit.Units.Select(u => u.Tier).Distinct())
+        {
+            var t = tier;
+            <h3 class="vh-tier">@VerbUnits.TierTitle(t)</h3>
+            <div class="list">
+                @foreach (var unit in Kit.Units.Where(u => u.Tier == t))
+                {
+                    var u = unit;
+                    var s = states[u.Id];
+                    var here = current == u;
+                    <button type="button" class="row vh-unit @(here ? "here" : "") @(s.Solid ? "solid" : "")" @onclick="() => OnOpenUnit.InvokeAsync(u)">
+                        <span class="vh-num" aria-hidden="true">@u.Number</span>
+                        <span class="row-text">
+                            <span class="row-top">
+                                <span class="vh-title" lang="en">@u.Title</span>
+                                @if (here)
+                                {
+                                    <span class="badge vh-here">@(s.Status == UnitStatus.New ? "Up next" : "In progress")</span>
+                                }
+                                else if (s.Status != UnitStatus.New)
+                                {
+                                    <span class="badge @BadgeClass(s.Status)">@UnitProgress.StatusLabel(s.Status)</span>
+                                }
+                                @if (u.Goal == UnitGoal.ReadFirst && !s.MakeRequired)
+                                {
+                                    <span class="badge vh-goal">Read first</span>
+                                }
+                                else if (u.Goal == UnitGoal.ReadOnly)
+                                {
+                                    <span class="badge vh-goal">Read only</span>
+                                }
+                            </span>
+                            <UnitMeters Unit="u" State="s" />
+                        </span>
+                    </button>
+                }
+            </div>
+        }
+    </section>
+
+    <button type="button" class="tool vh-explore" @onclick="() => OnExplore.InvokeAsync()">Explore: every tense, the grid, decoding</button>
+    <p class="list-hint">Explore has everything by tense, to look things up or practise anything you like. Nothing there is needed: Continue takes care of the order.</p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VerbKit Kit { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+
+    /// <summary>The session kept in memory (a Continue card resumes it).</summary>
+    [Parameter] public SessionRound? Session { get; set; }
+
+    [Parameter] public EventCallback OnContinue { get; set; }
+    [Parameter] public EventCallback OnPlacement { get; set; }
+    [Parameter] public EventCallback OnJustStart { get; set; }
+    [Parameter] public EventCallback<VerbUnit> OnOpenUnit { get; set; }
+    [Parameter] public EventCallback OnExplore { get; set; }
+
+    private static string SummaryText(int minutes, int due, VerbUnit? current)
+    {
+        var parts = new List<string> { $"About {minutes} min" };
+        if (due > 0) parts.Add($"{due} {(due == 1 ? "review" : "reviews")}");
+        if (current is not null) parts.Add($"unit {current.Number}");
+        parts.Add("real sentences");
+        return string.Join(" · ", parts);
+    }
+
+    private static string BadgeClass(UnitStatus s) => s switch
+    {
+        UnitStatus.Learning => "learning",
+        UnitStatus.Automatic => "mastered",
+        _ => "known",
+    };
+}

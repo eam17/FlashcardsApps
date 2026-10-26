@@ -350,6 +350,9 @@
         if (round is null || round.Done) round = null;
     }
 
+    /// <summary>Verb progress was reset: drop the round kept in memory.</summary>
+    public static void Forget() => round = null;
+
     private static string TenseList(IReadOnlyList<string> tenses)
     {
         var names = tenses.Select(t => VerbGrammar.TenseById[t].Name.ToLowerInvariant()).ToList();

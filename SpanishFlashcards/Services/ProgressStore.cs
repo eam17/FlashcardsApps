@@ -81,8 +81,11 @@ public sealed class Progress
     /// <summary>Verbs tab: whose turn it is among the regular verbs used to practise each pattern.</summary>
     public Dictionary<string, int> VerbRotation { get; set; } = new();
 
-    /// <summary>Verbs tab: include vosotros forms in tables, practice and tests (Settings → Verbs).</summary>
-    public bool ShowVosotros { get; set; } = true;
+    /// <summary>
+    /// Verbs tab: include vosotros forms in tables, practice and tests (Settings → Verbs). Off for new progress:
+    /// the app is set up for Latin American Spanish, which says ustedes.
+    /// </summary>
+    public bool ShowVosotros { get; set; }
 
     /// <summary>Verbs tab: latest test result per tree item (keyed by item id, e.g. "t:pres/stem/o-ue").</summary>
     public Dictionary<string, VerbTestRecord> VerbTests { get; set; } = new();
@@ -93,8 +96,29 @@ public sealed class Progress
     /// <summary>Verbs tab: the placement check was taken (finished or stopped).</summary>
     public bool VerbPlacementDone { get; set; }
 
-    /// <summary>Verb forms due for review also come up on the Cards tab, after your words.</summary>
+    /// <summary>Verb reviews that are due also come up on the Cards tab, after your words.</summary>
     public bool VerbsInCards { get; set; } = true;
+
+    /// <summary>Verbs tab: what you've shown in each unit (keyed by unit id, e.g. "pret-ar").</summary>
+    public Dictionary<string, UnitRecord> VerbUnits { get; set; } = new();
+
+    /// <summary>Verbs tab: review memory per review item ("u:pret-ar:m" for a unit, "v:ser|pret:r" for a verb).</summary>
+    public Dictionary<string, VerbMem> VerbMemory { get; set; } = new();
+
+    /// <summary>Verbs tab: you've started (took the placement check or chose to start from the beginning).</summary>
+    public bool VerbsStarted { get; set; }
+
+    /// <summary>Older verb progress (practice, Decode, lessons, tests) has been moved into the units (done once).</summary>
+    public bool VerbUnitsMigrated { get; set; }
+
+    /// <summary>Verbs tab: minutes in a Continue session (5, 10, 15 or 20; Settings → Verbs).</summary>
+    public int VerbSessionMinutes { get; set; } = 10;
+
+    /// <summary>Verbs tab: how forms are spelled by default, "tiles" or "keyboard" (either can be switched on a question).</summary>
+    public string VerbSpelling { get; set; } = "tiles";
+
+    /// <summary>Verbs tab: time limits for a quick answer: "relaxed", "normal", "tight" or "off".</summary>
+    public string VerbTimeLimits { get; set; } = "normal";
 
     /// <summary>Read tab: texts you pasted, with the words you chose to study for each.</summary>
     public List<SavedText> Texts { get; set; } = new();

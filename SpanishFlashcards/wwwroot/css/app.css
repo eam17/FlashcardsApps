@@ -510,6 +510,7 @@ h1 { font-size: 24px; }
 .params-box { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; }
 .set-card.danger { border-color: #F2C4BE; }
 .reset-btn { min-height: 44px; padding: 8px 16px; border-radius: 12px; border: 1.5px solid #B42318; background: #FDE4E1; color: #7A1A12; font-weight: 700; font-size: 14px; }
+.set-card p.reset-next { margin-top: 10px; }
 
 /* ===== game feedback banner: unmistakable right / wrong ===== */
 .game-feedback {
@@ -1421,7 +1422,7 @@ p.dc-note { margin: 0; }
     .games > .back-btn { margin-left: max(0px, calc((100% - 680px) / 2)); }
 
     /* Verbs: practice, tests and Decode stay a comfortable size; lists and rules use the width */
-    .verbs .vp, .verbs .tst, .verbs .dc { width: 100%; max-width: 720px; margin-inline: auto; }
+    .verbs .vp, .verbs .tst, .verbs .dc, .verbs .vs, .verbs .up, .verbs .vh { width: 100%; max-width: 720px; margin-inline: auto; }
     .vg-scroll { max-height: calc(100dvh - 260px); }
     .vg-sheet { left: calc(50% + var(--side-w, 232px) / 2); }
 
@@ -1450,7 +1451,7 @@ p.dc-note { margin: 0; }
 }
 
 
-/* ===== Verbs: the path (lessons, placement, map), mistake explanations, verb reviews on Cards ===== */
+/* ===== Verbs: lesson-style headings and cards, mistake explanations, verb reviews on Cards ===== */
 .vp-why { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--warm-soft); border: 1px solid #EBD9A8; }
 .vp-why p { margin: 0; font-size: 14px; line-height: 1.45; }
 .vp-why-label { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--warm-ink); }
@@ -1481,32 +1482,6 @@ p.dc-note { margin: 0; }
 .ls-next-up { margin: 0; font-weight: 700; }
 .ls-stop { align-self: center; }
 
-.vpath { display: flex; flex-direction: column; gap: 12px; }
-.vpath-hero { padding: 16px 18px; }
-.vpath-review, .vpath-place { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
-.vpath-place { background: var(--warm-soft); border-color: #EBD9A8; }
-.vpath-review-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.vpath-review-title { font-weight: 800; }
-.vpath-review-sub { font-size: 13px; color: var(--muted); }
-.vpath-map { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
-.vpath-map-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
-.vpath-map-head .rd-h { margin: 0; }
-.vpath-map-sum { font-size: 13px; color: var(--muted); font-weight: 700; }
-.vpath-stage { display: flex; flex-direction: column; gap: 6px; }
-.vpath-stage-title { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 800; font-size: 15px; }
-.vpath-stage .tool.small { align-self: flex-start; }
-.vpath-tense { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name count" "dots dots"; gap: 4px 8px; padding: 8px 10px; border-radius: 12px; background: var(--ground); }
-.vpath-tense.here { background: var(--accent-soft); }
-.vpath-tense-name { grid-area: name; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: none; background: none; color: var(--ink); font-weight: 700; text-align: left; }
-.vpath-here { padding: 2px 8px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
-.vpath-ok { color: #1E7A46; font-weight: 800; }
-.vpath-count { grid-area: count; font-size: 13px; font-weight: 700; color: var(--muted); }
-.vpath-dots { grid-area: dots; display: flex; flex-wrap: wrap; gap: 6px; }
-.vpath-dot { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--surface); }
-.vpath-dot.done { background: var(--accent); border-color: var(--accent); }
-.vpath-dot.next { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.vpath-more { display: flex; flex-wrap: wrap; gap: 8px; }
-
 .cards-verbs { display: flex; flex-direction: column; gap: 10px; margin: 0 16px; padding: 14px 16px; border-radius: 18px; background: var(--accent-soft); }
 .cards-verbs-text { display: flex; flex-direction: column; gap: 2px; }
 .cards-verbs-title { font-family: var(--display); font-weight: 800; font-size: 18px; color: var(--accent-ink); }
@@ -1514,3 +1489,75 @@ p.dc-note { margin: 0; }
 .cards-verbs-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .cards-verbs-actions .primary { margin-top: 0; }
 .cards-verb-review { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 0 16px 20px; }
+
+
+/* ===== Verbs: home (Continue and the units), a unit's page, sessions ===== */
+.vh { display: flex; flex-direction: column; gap: 12px; }
+.vh-start, .vh-continue { padding: 16px 18px; }
+.vh-note { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.vh-units { display: flex; flex-direction: column; gap: 8px; }
+.vh-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.vh-head .rd-h { margin: 0; }
+.vh-sum { font-size: 13px; font-weight: 700; color: var(--muted); }
+.vh-tier { margin: 8px 0 0; font-family: var(--display); font-weight: 800; font-size: 15px; color: var(--muted); }
+.vh-unit { width: 100%; border: none; background: var(--surface); color: var(--ink); text-align: left; align-items: flex-start; min-height: 0; padding: 10px 14px; }
+.vh-unit.here { background: var(--accent-soft); }
+.vh-num { flex-shrink: 0; width: 26px; height: 26px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; background: var(--chip-idle); font-size: 12px; font-weight: 800; color: var(--muted); }
+.vh-unit.here .vh-num { background: var(--accent); color: #fff; }
+.vh-unit.solid .vh-num { background: #DDF3E6; color: #14532D; }
+.vh-title { font-family: var(--display); font-weight: 700; font-size: 16px; line-height: 1.2; }
+.badge.vh-here { background: var(--accent); color: #fff; }
+.badge.vh-goal { background: var(--warm-soft); color: var(--warm-ink); }
+.vh-explore { align-self: flex-start; }
+
+/* The three meters of a unit */
+.um { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; max-width: 360px; margin-top: 6px; }
+.um-m { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.um-l { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.um-bar { display: block; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.um-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width .3s ease; }
+.um-m.later .um-bar { background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 7px); }
+
+/* A unit's page */
+.up { display: flex; flex-direction: column; gap: 14px; }
+.up-status { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.up-status-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.up-status-text { font-size: 14px; color: var(--muted); }
+.up-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.up-actions .primary { margin-top: 0; }
+.up-section { display: flex; flex-direction: column; gap: 8px; }
+.up-stems { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+
+/* A session */
+.vs { display: flex; flex-direction: column; gap: 12px; }
+.vs-card { align-items: stretch; text-align: left; }
+.vs-card .vp-tense { text-align: center; }
+.vs-line { margin: 4px 0 0; font-size: 19px; line-height: 1.55; }
+.vs-gap { display: inline-block; min-width: 72px; color: var(--line-strong); letter-spacing: .1em; font-family: var(--display); font-weight: 700; }
+.vs-target { padding: 0 3px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-ink); font-family: var(--display); font-weight: 700; }
+.vs-target.done { background: #DDF3E6; color: #14532D; }
+.vs-clue { padding: 0 2px; border-radius: 4px; background: var(--warm-badge); color: inherit; }
+.vs-hint { font-size: 15px; font-weight: 700; color: var(--accent-ink); }
+.vs-source { font-size: 12px; color: var(--muted); }
+.vs-english { font-size: 17px; font-weight: 700; text-align: center; }
+.vs-english.big { font-family: var(--display); font-size: 24px; line-height: 1.2; }
+.vs-big { font-family: var(--display); font-weight: 800; font-size: 22px; }
+.vs-choices { grid-template-columns: 1fr; }
+.vs-choices .choice { text-align: left; justify-content: flex-start; }
+.vs-build { display: flex; flex-direction: column; gap: 6px; }
+.vs-build .choice.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.vs-decode { display: flex; flex-direction: column; gap: 12px; }
+.vs-timer { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.vs-timer > span { display: block; height: 100%; width: 100%; background: var(--warm-border); transform-origin: left; animation-name: vs-shrink; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes vs-shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .vs-timer > span { animation: none; } }
+.vs-end p { margin: 0; }
+.vs-moved { width: 100%; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 14px; background: var(--ground); text-align: left; }
+.vs-moved-title { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.vs-moved-row { display: flex; flex-direction: column; gap: 2px; }
+.vs-moved-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 700; }
+.si-switch { align-self: center; min-height: 32px; padding: 2px 12px; border: none; background: transparent; color: var(--accent); font-size: 13px; font-weight: 700; text-decoration: underline; }
+
+/* Explore: back to your verbs, and its three views */
+.vb-explore-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vb-explore-top .back-btn { display: inline-flex; align-items: center; gap: 4px; }

@@ -1,0 +1,98 @@
+@* Spell a form: with the phone keyboard (plus a row of accented letters) or with letter tiles. A link switches
+   between them on the spot; the default is in Settings → Verbs. *@
+@inject IJSRuntime JS
+
+@if (UseTiles)
+{
+    <TileSpeller State="Tiles" Locked="Locked" ResultClass="@ResultClass" OnCheck="CheckTiles" />
+}
+else
+{
+    <div class="vp-type">
+        <input id="@InputId" class="vp-input @(Locked ? ResultClass : "")" type="text" lang="es" autocomplete="off" autocapitalize="off"
+               autocorrect="off" spellcheck="false" placeholder="Type the Spanish" aria-label="Your answer in Spanish"
+               disabled="@Locked" @bind="text" @bind:event="oninput" @onkeydown="Key" />
+        @if (!Locked)
+        {
+            <div class="vp-accents seven" role="group" aria-label="Letters with accents">
+                @foreach (var ch in Accents)
+                {
+                    var c = ch;
+                    <button type="button" class="vp-key" @onclick="() => Add(c)">@c</button>
+                }
+            </div>
+            <button type="button" class="primary wide" disabled="@(string.IsNullOrWhiteSpace(text))" @onclick="CheckTyped">Check</button>
+        }
+    </div>
+}
+@if (!Locked)
+{
+    <button type="button" class="si-switch" @onclick="Switch">@(UseTiles ? "Use the keyboard" : "Use letter tiles")</button>
+}
+
+@code {
+    private static readonly string[] Accents = ["á", "é", "í", "ó", "ú", "ñ", "ü"];
+
+    /// <summary>The tiles for this question (made by the owner, since they depend on the question).</summary>
+    [Parameter, EditorRequired] public TileState Tiles { get; set; } = default!;
+
+    [Parameter] public bool UseTiles { get; set; }
+    [Parameter] public EventCallback<bool> UseTilesChanged { get; set; }
+
+    /// <summary>Answered: no more input; the answer shows its result colour.</summary>
+    [Parameter] public bool Locked { get; set; }
+
+    /// <summary>"right", "almost" or "wrong" once answered.</summary>
+    [Parameter] public string ResultClass { get; set; } = "";
+
+    /// <summary>The answer, and whether it was spelled with tiles.</summary>
+    [Parameter] public EventCallback<(string Text, bool Tiles)> OnAnswer { get; set; }
+
+    /// <summary>A new question clears what was typed.</summary>
+    [Parameter] public int QuestionId { get; set; }
+
+    [Parameter] public string InputId { get; set; } = "vs-answer";
+
+    private string text = "";
+    private int forQuestion = -1;
+    private bool focusPending;
+
+    protected override void OnParametersSet()
+    {
+        if (forQuestion == QuestionId) return;
+        forQuestion = QuestionId;
+        text = "";
+        focusPending = !UseTiles;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focusPending || UseTiles || Locked) return;
+        focusPending = false;
+        try { await JS.InvokeVoidAsync("palabras.focusById", InputId); }
+        catch (Exception) { }
+    }
+
+    private void Add(string c)
+    {
+        text += c;
+        focusPending = true;
+    }
+
+    private async Task Key(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CheckTyped();
+    }
+
+    private Task CheckTyped() =>
+        string.IsNullOrWhiteSpace(text) ? Task.CompletedTask : OnAnswer.InvokeAsync((text, false));
+
+    private Task CheckTiles() =>
+        Tiles.Any ? OnAnswer.InvokeAsync((Tiles.Typed, true)) : Task.CompletedTask;
+
+    private async Task Switch()
+    {
+        focusPending = UseTiles; // switching to the keyboard: put the cursor in the box
+        await UseTilesChanged.InvokeAsync(!UseTiles);
+    }
+}

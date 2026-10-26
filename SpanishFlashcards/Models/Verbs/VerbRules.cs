@@ -98,9 +98,10 @@ public static class VerbRules
             new RuleRecipe([Recipe(hablar, "pres", 0)]),
             new RuleSection("Key words", [new RuleList(Glossary.Select(g => $"**{g.Term}**: {g.Meaning}").ToList())], Open: true),
             new RuleSection("Colours in the tables", [new RuleColorKey()]),
-            new RuleSection("How this tab is organised",
+            new RuleSection("How Explore is organised",
             [
-                new RulePara("Tenses are grouped into four stages, most useful first: **Start here**, **Next**, **Later** and **Recognise only**. The dots show how often you meet each one (●●●● everyday, ● rare). The order is a suggestion: you can open anything at any time."),
+                new RulePara("**Your verbs** (the Verbs tab's home) takes you through the units in a useful order: tap **Continue** and it picks what's next. Explore has everything by tense, to look things up or practise anything you like."),
+                new RulePara("Tenses are grouped into four stages: **Start here**, **Next**, **Later** and **Recognise only**. The dots show how often you meet each one (●●●● everyday, ● rare)."),
                 new RuleList([
                     "**Tense**: when it happens, or a mood (subjunctive, commands).",
                     "**Type**: regular verbs, stem-changing verbs, unique verbs…",
@@ -108,9 +109,9 @@ public static class VerbRules
                     "**Verb**: one verb in that tense.",
                 ]),
                 new RulePara("Each item has Rules, Practice, a Test and a progress bar. Practice and tests cover everything inside the item."),
-                new RulePara("**Decode** (the switch at the top) works the other way round: you meet a form like *tuve* and work out the verb, who and when. It also has a cheat sheet of endings and a table of strange stems (*tuv-* → *tener*)."),
+                new RulePara("**Decode** works the other way round: you meet a form like *tuve* and work out the verb, who and when. It also has a cheat sheet of endings and a table of strange stems (*tuv-* → *tener*)."),
             ]),
-            new RuleSection("How practice works",
+            new RuleSection("How practice works here",
             [
                 new RuleList([
                     "New forms: multiple choice, 6 look-alike options. Once you know a form, you spell it from letter tiles, with a few trap letters mixed in.",
@@ -118,9 +119,8 @@ public static class VerbRules
                     "Regular verbs: you practise the endings, with a different verb each time.",
                     "Stem-changing and *-go* verbs: just the forms that change.",
                     "Unique verbs: every form.",
-                    "Right answers come back less and less often; a mistake comes back in minutes.",
                 ]),
-                new RulePara("**Tests** check a whole tense or group in one go, spelling only. Groups you pass are marked as known (they come back once, about a week later); groups you miss show up under *Weak spots*. Score 90% or more and the item is **Mastered** for as long as you keep remembering it."),
+                new RulePara("**Tests** check a whole tense or group in one go, spelling only. Groups you pass are marked as known; groups you miss show up under *Weak spots*. Score 90% or more and the item is **Mastered** for as long as you keep remembering it."),
             ]),
             new RuleCheck("*Hablo* means:", ["I speak", "he spoke", "we speak", "Speak!"], 0,
                 "The ending *-o* means *yo* (I), so *hablo* is \"I speak\" with no *yo* needed.", SpanishOptions: false),

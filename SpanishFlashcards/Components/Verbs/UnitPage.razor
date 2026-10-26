@@ -1,0 +1,123 @@
+@* One unit: where it stands, the idea (tables, how a form is built), real sentences, the strange stems that matter
+   for it, its verbs, and two ways in: practise it, or prove you know it with its check. *@
+
+@{
+    var state = VerbCourse.State(Kit, Progress, Unit);
+    var idea = VerbUnits.Idea(Unit, Kit.Book);
+    var stems = Stems().ToList();
+}
+
+<div class="up">
+    <div class="ls-head">
+        <div class="ls-head-text">
+            <div class="ls-kicker">@Unit.Kicker</div>
+            <h2 class="ls-title">@Unit.Title</h2>
+        </div>
+        <button type="button" class="vb-resume-x" aria-label="Back to your verbs" title="Back" @onclick="() => OnBack.InvokeAsync()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
+    </div>
+
+    <section class="up-status">
+        <div class="up-status-top">
+            <span class="badge @(state.Status == UnitStatus.Learning ? "learning" : state.Status == UnitStatus.New ? "new" : "known")">@UnitProgress.StatusLabel(state.Status)</span>
+            <span class="up-status-text">@StatusText(state)</span>
+        </div>
+        <UnitMeters Unit="Unit" State="state" />
+        <div class="up-actions">
+            <button type="button" class="primary" @onclick="() => OnPractise.InvokeAsync()">Practise this unit</button>
+            <button type="button" class="tool" @onclick="() => OnCheck.InvokeAsync()">I know this (check)</button>
+        </div>
+    </section>
+
+    <CascadingValue Value="Kit.Book" IsFixed="true">
+        <div class="vr">
+            <RuleBlocksView Blocks="idea" />
+        </div>
+    </CascadingValue>
+
+    @if (Unit.Stories.Count > 0 || Unit.Sentences.Count > 0)
+    {
+        <section class="up-section">
+            <h3 class="ls-h3">In real sentences</h3>
+            <div class="st-quotes">
+                @foreach (var s in Unit.Sentences.Where(x => VerbSettings.IsActive(x.Tense, x.Person)).Take(3))
+                {
+                    <div class="st-quote">
+                        <span class="st-line" lang="es">@RuleText.RenderExample(VerbUnits.Fill(s, Kit.Book))</span>
+                        <div class="st-en">@s.En</div>
+                    </div>
+                }
+                @foreach (var spot in Unit.Stories.Where(x => VerbSettings.IsActive(x.Tense, x.Person)).DistinctBy(x => x.Sentence).Take(3))
+                {
+                    <div class="st-quote">
+                        <StorySentenceView Sentence="spot.Sentence" Book="Kit.Book" Highlight="@(new HashSet<int> { spot.Token })" />
+                        <div class="st-en">@spot.Sentence.En</div>
+                        <div class="st-from">@($"From \"{spot.Story.Title}\"")</div>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
+    @if (stems.Count > 0)
+    {
+        <section class="up-section">
+            <h3 class="ls-h3">Stems that don't look like their verb</h3>
+            <p class="list-hint">Learn the stem once and you'll know the verb when you meet it.</p>
+            <div class="up-stems">
+                @foreach (var s in stems)
+                {
+                    <div class="dc-stem-top">
+                        <span class="dc-stem-label" lang="es">@s.Label</span>
+                        <span class="dc-arrow" aria-hidden="true">→</span>
+                        <span class="dc-stem-verb" lang="es">@(string.Join(" / ", s.Verbs))</span>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
+    @if (Unit.Verbs.Count > 1 && Unit.Kind is UnitKind.Pattern or UnitKind.Group)
+    {
+        <section class="up-section">
+            <h3 class="ls-h3">@(Unit.Kind == UnitKind.Pattern ? "Some verbs that follow it" : "Its verbs")</h3>
+            <div class="vr-verbs" lang="es">
+                @foreach (var v in Unit.Verbs.Take(24))
+                {
+                    <span class="vr-verb" title="@v.En">@v.Inf</span>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VerbKit Kit { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbUnit Unit { get; set; } = default!;
+    [Parameter] public EventCallback OnBack { get; set; }
+    [Parameter] public EventCallback OnPractise { get; set; }
+    [Parameter] public EventCallback OnCheck { get; set; }
+
+    /// <summary>Strange stems (the Decode table) for this unit's verbs in its tenses.</summary>
+    private IEnumerable<StrangeStem> Stems()
+    {
+        var verbs = Unit.Verbs.Select(v => v.Reflexive ? v.Inf[..^2] : v.Inf).ToHashSet();
+        var tenses = Unit.Tenses.Select(t => VerbGrammar.TenseById[t].IsCompound ? "perf" : t).ToHashSet();
+        return VerbDecode.StrangeStems.SelectMany(g => g.Stems)
+            .Where(s => s.Verbs.Any(verbs.Contains) && s.Tenses.Any(tenses.Contains))
+            .Take(12);
+    }
+
+    private static string StatusText(UnitState s) => s.Status switch
+    {
+        UnitStatus.New => "Not started. Practise it, or take its check if you think you know it.",
+        UnitStatus.Learning => s.MakeRequired
+            ? "Learning. It becomes solid once the rule, making and reading are all there."
+            : "Learning. It becomes solid once you can read its forms in sentences.",
+        UnitStatus.Known => "Skipped as already known. A review in a few days makes sure.",
+        UnitStatus.Solid => "Solid: it comes back in reviews until it's quick too.",
+        _ => "Automatic: right and quick. It still comes back now and then.",
+    };
+}

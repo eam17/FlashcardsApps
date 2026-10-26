@@ -1,7 +1,8 @@
-@* The Verbs tab. Path (the default): guided lessons in learning order, reviews, the placement check and the map.
-   Browse: tense → type → group → verb, where every item has Overview, Rules and Practice, and a progress bar.
-   Grid and Decode as before. *@
+@* The Verbs tab. Home (the default): Continue, the units in order and their meters, a unit's page, and the session
+   itself (VerbsHome, UnitPage, SessionView). Explore: Browse (tense → type → group → verb, where every item has
+   Overview, Rules, Practice and a Test), the Grid and Decode, to look things up or practise anything you like. *@
 @inject VerbRepository VerbRepo
+@inject WordRepository WordRepo
 
 @if (book is null || tree is null)
 {
@@ -17,6 +18,27 @@ else
     var mastered = VerbTests.IsMastered(node, Progress.VerbSkills, Progress.VerbTests);
 
     <div class="verbs">
+        @if (mode == Mode.Home)
+        {
+            var kit = Kit;
+            @if (screen == Screen.Session && session is not null)
+            {
+                <SessionView @key="session" Round="session" Kit="kit" Progress="Progress" OnSaved="Saved" OnClose="CloseSession"
+                             OnAgain="Again" OnPractiseUnit="PractiseUnit" CanSpeak="CanSpeak" Speak="Speak" />
+            }
+            else if (screen == Screen.Unit && openUnit is not null && kit.Unit(openUnit) is { } unit)
+            {
+                <UnitPage @key="unit.Id" Kit="kit" Progress="Progress" Unit="unit" OnBack="GoHome"
+                          OnPractise="() => PractiseUnit(unit)" OnCheck="() => CheckUnit(unit)" />
+            }
+            else
+            {
+                <VerbsHome Kit="kit" Progress="Progress" Session="session" OnContinue="StartContinue" OnPlacement="StartPlacement"
+                           OnJustStart="JustStart" OnOpenUnit="OpenUnit" OnExplore="OpenExplore" />
+            }
+        }
+        else
+        {
         @if (resume is not null && !(view == (resume.IsTest ? View.Test : View.Practice) && resume.Node == node))
         {
             <div class="vb-resume" role="status">
@@ -31,47 +53,19 @@ else
                 </button>
             </div>
         }
-        <div class="segmented vb-mode" role="tablist" aria-label="Show verbs as">
-            <button type="button" role="tab" class="seg @(mode == Mode.Path ? "on" : "")" aria-selected="@(mode == Mode.Path ? "true" : "false")" @onclick="() => mode = Mode.Path">Path</button>
-            <button type="button" role="tab" class="seg @(mode == Mode.Tree ? "on" : "")" aria-selected="@(mode == Mode.Tree ? "true" : "false")" @onclick="() => mode = Mode.Tree">Browse</button>
-            <button type="button" role="tab" class="seg @(mode == Mode.Grid ? "on" : "")" aria-selected="@(mode == Mode.Grid ? "true" : "false")" @onclick="() => mode = Mode.Grid">Grid</button>
-            <button type="button" role="tab" class="seg @(mode == Mode.Decode ? "on" : "")" aria-selected="@(mode == Mode.Decode ? "true" : "false")" @onclick="() => mode = Mode.Decode">Decode</button>
+        <div class="vb-explore-top">
+            <button type="button" class="tool back-btn" @onclick="GoHome">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                Your verbs
+            </button>
+            <div class="segmented vb-mode" role="tablist" aria-label="Explore">
+                <button type="button" role="tab" class="seg @(mode == Mode.Tree ? "on" : "")" aria-selected="@(mode == Mode.Tree ? "true" : "false")" @onclick="() => mode = Mode.Tree">Browse</button>
+                <button type="button" role="tab" class="seg @(mode == Mode.Grid ? "on" : "")" aria-selected="@(mode == Mode.Grid ? "true" : "false")" @onclick="() => mode = Mode.Grid">Grid</button>
+                <button type="button" role="tab" class="seg @(mode == Mode.Decode ? "on" : "")" aria-selected="@(mode == Mode.Decode ? "true" : "false")" @onclick="() => mode = Mode.Decode">Decode</button>
+            </div>
         </div>
 
-        @if (mode == Mode.Path)
-        {
-            var lessons = Lessons;
-            @if (pathScreen == PathScreen.Lesson && lessonRound is not null)
-            {
-                <LessonView @key="lessonRound" L="lessonRound" Book="book" NextLesson="VerbPath.Next(lessons, Progress.VerbLessons, Progress.VerbSkills, Progress.VerbTests, now)"
-                            OnSaved="Saved" OnClose="() => pathScreen = PathScreen.Map" OnNext="StartLesson" CanSpeak="CanSpeak" Speak="Speak" />
-            }
-            else if (pathScreen == PathScreen.Placement && placementRound is not null)
-            {
-                <VerbPlacement P="placementRound" NextLesson="VerbPath.Next(lessons, Progress.VerbLessons, Progress.VerbSkills, Progress.VerbTests, now)"
-                               OnSaved="Saved" OnClose="() => pathScreen = PathScreen.Map" />
-            }
-            else if (pathScreen == PathScreen.Review && dueRound is not null)
-            {
-                <div class="ls-head">
-                    <div class="ls-head-text">
-                        <div class="ls-kicker">Review</div>
-                        <h2 class="ls-title">Verb forms due</h2>
-                    </div>
-                    <button type="button" class="vb-resume-x" aria-label="Close the review" title="Close" @onclick="() => pathScreen = PathScreen.Map">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                    </button>
-                </div>
-                <VerbPractice @key="dueRound" R="dueRound" OnSaved="Saved" OnClose="() => pathScreen = PathScreen.Map" CanSpeak="CanSpeak" Speak="Speak" />
-            }
-            else
-            {
-                <VerbPathView Lessons="lessons" Progress="Progress" DueCount="VerbPath.Due(tree, Progress.VerbSkills, now).Count"
-                              Current="lessonRound" OnStartLesson="StartLesson" OnReview="StartReview" OnPlacement="StartPlacement"
-                              OnBrowse="BrowseFromPath" OnDecode="RareInDecode" />
-            }
-        }
-        else if (mode == Mode.Decode)
+        @if (mode == Mode.Decode)
         {
             <DecodeView Book="book" Progress="Progress" OnSaved="Saved" CanSpeak="CanSpeak" Speak="Speak" Tree="tree" OnOpenRules="OpenRulesFromDecode" />
         }
@@ -157,22 +151,6 @@ else
             }
             else
             {
-                @if (node.Kind == NodeKind.Root && UpNextFor(now) is { } next)
-                {
-                    <section class="vb-next" aria-label="Up next">
-                        <div class="vb-next-kicker">Up next</div>
-                        <div class="vb-next-title">@next.Title</div>
-                        <div class="vb-next-text">@next.Text</div>
-                        <div class="vb-next-actions">
-                            <button type="button" class="primary vb-next-go" @onclick="() => GoUpNext(next)">@next.Button</button>
-                            @if (next.ShowRules)
-                            {
-                                <button type="button" class="tool vb-next-rules" @onclick="() => OpenRulesFromDecode(next.Node)">Read the rules first</button>
-                            }
-                        </div>
-                    </section>
-                }
-
                 @if (node.Kind is NodeKind.Root or NodeKind.Tense or NodeKind.Type)
                 {
                     var weak = VerbTests.WeakSpots(node, Progress.VerbSkills, Progress.VerbTests);
@@ -283,7 +261,7 @@ else
 
                 @if (node.Kind != NodeKind.Root)
                 {
-                    @* The top page has Up next instead: practising all 3,000 forms at once isn't a useful start. *@
+                    @* Not on the top page: practising all 3,000 forms at once isn't a useful start (Continue on the home page is). *@
                     var readOnly = node.TenseInfo is { Stage: 4 };
                     @if (readOnly)
                     {
@@ -303,6 +281,7 @@ else
                 }
             }
         </div>
+        }
         }
     </div>
 }
@@ -330,6 +309,18 @@ else
     /// <summary>Show Decode next time the Verbs tab shows (set its tenses with DecodeView.Focus first).</summary>
     public static void ShowDecode() => mode = Mode.Decode;
 
+    /// <summary>Verb progress was reset: drop sessions, practice rounds and tests kept in memory, and show home.</summary>
+    public static void Forget()
+    {
+        session = null;
+        screen = Screen.Home;
+        openUnit = null;
+        mode = Mode.Home;
+        rounds.Clear();
+        tests.Clear();
+        DecodeView.Forget();
+    }
+
     private VerbBook? book;
     private VerbNode? tree;
     private VerbNode? current;
@@ -344,6 +335,11 @@ else
         {
             (book, tree) = await VerbRepo.GetAsync();
             current = lastNodeId is null ? tree : VerbTree.Find(tree, lastNodeId) ?? tree;
+            if (!Progress.VerbUnitsMigrated)
+            {
+                VerbCourse.Migrate(Kit, Progress);
+                await Saved();
+            }
             view = lastView;
             if (view == View.Practice && RoundFor(Current) is null) view = View.Overview;
             if (view == View.Test && !VerbTests.CanTest(Current)) view = View.Overview;
@@ -353,6 +349,9 @@ else
         {
             loadError = $"Couldn't load the verbs: {ex.Message}";
         }
+        // The word list, for finding verbs in your Read texts ("From your texts"). Sessions work without it.
+        try { words = await WordRepo.GetAllAsync(); }
+        catch (Exception) { }
     }
 
     private void Go(VerbNode? node)
@@ -468,69 +467,6 @@ else
             }
         </button>;
 
-    // ------------------------------------------------------------------ up next
-
-    /// <summary>The suggestion at the top of the Verbs page.</summary>
-    private sealed record UpNext(VerbNode Node, string Title, string Text, string Button, bool ShowRules, bool Decode);
-
-    /// <summary>
-    /// Reviews first (the tense with the most forms due); otherwise the first tense in the learning order
-    /// (stages 1 to 3) you haven't started or aren't ready to leave yet; once those are done, the rare
-    /// tenses in Decode.
-    /// </summary>
-    private UpNext UpNextFor(DateTime now)
-    {
-        var tenses = tree!.Children;
-        var stats = tenses.ToDictionary(t => t.Id, t => VerbTree.Stats(t, Progress.VerbSkills, now));
-
-        VerbNode? learn = null;
-        foreach (var t in tenses.Where(t => t.TenseInfo!.Stage <= 3))
-        {
-            if (stats[t.Id].Started == 0 || !ReadyToMoveOn(t, stats[t.Id], now)) { learn = t; break; }
-        }
-
-        var due = tenses.Where(t => stats[t.Id].Due > 0).OrderByDescending(t => stats[t.Id].Due).FirstOrDefault();
-        if (due is not null)
-        {
-            var n = stats[due.Id].Due;
-            var then = learn is null || learn == due ? "" : $" Then: {learn.Title}.";
-            return new(due, $"Review: {due.Title}", $"{n} {(n == 1 ? "form is" : "forms are")} due. A short round keeps them fresh.{then}",
-                $"Practise ({n} due)", false, false);
-        }
-
-        if (learn is not null)
-        {
-            var s = stats[learn.Id];
-            var info = learn.TenseInfo!;
-            return s.Started == 0
-                ? new(learn, $"Start: {learn.Title}", $"{learn.Subtitle}. {info.FrequencyLabel} in conversation.", "Start practising", true, false)
-                : new(learn, $"Keep going: {learn.Title}", $"{s.Percent}% so far. When the regular forms are solid, the next tense shows up here.", "Practise", false, false);
-        }
-
-        return new(tree!, "Recognise the rare tenses", "You've covered the main tenses. The last four are rare: practise reading them in Decode.",
-            "Practise reading", false, true);
-    }
-
-    /// <summary>
-    /// Good enough to move on: the regular endings are solid (60% or more) and the tense as a whole is at
-    /// 20%, or you've mastered it with a test.
-    /// </summary>
-    private bool ReadyToMoveOn(VerbNode tense, NodeStats s, DateTime now)
-    {
-        if (VerbTests.IsMastered(tense, Progress.VerbSkills, Progress.VerbTests)) return true;
-        var regular = tense.Children.Where(c => c.TypeId == "reg")
-            .Select(c => VerbTree.Stats(c, Progress.VerbSkills, now)).ToList();
-        return regular.All(r => r.Percent >= 60) && s.Percent >= 20;
-    }
-
-    private async Task GoUpNext(UpNext next)
-    {
-        if (next.Decode)
-            await FocusDecode(VerbGrammar.Tenses.Where(t => t.Stage == 4).Select(t => t.Id));
-        else
-            PractiseNode(next.Node);
-    }
-
     /// <summary>Switch to Decode, set up for these tenses.</summary>
     private async Task FocusDecode(IEnumerable<string> tenses)
     {
@@ -539,70 +475,111 @@ else
         await Saved();
     }
 
-    // Path, tree (Browse), grid or decode view of the Verbs tab, kept while the app is open.
-    private enum Mode { Path, Tree, Grid, Decode }
+    // Home, or one of Explore's views (Browse, Grid, Decode), kept while the app is open.
+    private enum Mode { Home, Tree, Grid, Decode }
 
-    private static Mode mode = Mode.Path;
+    private static Mode mode = Mode.Home;
 
-    // ------------------------------------------------------------------ the path
+    // ------------------------------------------------------------------ home: units and sessions
 
-    private enum PathScreen { Map, Lesson, Placement, Review }
+    private enum Screen { Home, Unit, Session }
 
-    // Kept while the app is open, like practice rounds: leaving a lesson keeps your place in it.
-    private static PathScreen pathScreen = PathScreen.Map;
-    private static LessonRound? lessonRound;
-    private static PlacementRound? placementRound;
-    private static PracticeRound? dueRound;
+    // Kept while the app is open, like practice rounds: closing a session keeps your place in it.
+    private static Screen screen = Screen.Home;
+    private static SessionRound? session;
+    private static string? openUnit;
 
-    private List<VerbLesson>? lessonList;
-    private bool lessonsVosotros;
+    private IReadOnlyList<Word>? words;
 
-    /// <summary>The lessons, in path order (rebuilt when the vosotros setting changes).</summary>
-    private List<VerbLesson> Lessons
+    private VerbKit Kit => VerbKit.For(book!, tree!);
+
+    /// <summary>Verbs in your translated Read texts (empty until the word list has loaded).</summary>
+    private IReadOnlyList<TextSpot> TextSpots()
     {
-        get
-        {
-            if (lessonList is null || lessonsVosotros != VerbSettings.Vosotros)
-            {
-                lessonList = VerbPath.Build(tree!);
-                lessonsVosotros = VerbSettings.Vosotros;
-            }
-            return lessonList;
-        }
+        if (words is null || Progress.Texts.Count == 0) return [];
+        try { return YourTexts.Spots(Progress.Texts, words, book!); }
+        catch (Exception) { return []; }
     }
 
-    /// <summary>Open a lesson: the one in progress if it's this one, otherwise from the start.</summary>
-    private void StartLesson(VerbLesson lesson)
+    private SessionRound NewSession(SessionRound.Mode kind, VerbUnit? unit = null) =>
+        new(kind, Kit, Progress, Progress.VerbSessionMinutes, unit, TextSpots(), CanSpeak);
+
+    /// <summary>Continue: the session in progress, or a new one.</summary>
+    private async Task StartContinue()
     {
-        // A new round for another lesson, or to redo a passed one; a lesson you didn't pass keeps its retry.
-        if (lessonRound is null || lessonRound.Lesson.Node.Id != lesson.Node.Id
-            || (lessonRound.Current == LessonRound.Step.Result && lessonRound.Passed))
-            lessonRound = new LessonRound(lesson, book!, Progress);
-        pathScreen = PathScreen.Lesson;
+        if (session is not { Done: false, Kind: SessionRound.Mode.Continue or SessionRound.Mode.Placement or SessionRound.Mode.Unit })
+            session = NewSession(SessionRound.Mode.Continue);
+        Progress.VerbsStarted = true;
+        screen = Screen.Session;
+        await Saved();
     }
 
-    private void StartPlacement()
+    private async Task StartPlacement()
     {
-        if (placementRound is null || placementRound.Done) placementRound = new PlacementRound(Lessons, book!, Progress);
-        pathScreen = PathScreen.Placement;
+        session = NewSession(SessionRound.Mode.Placement);
+        screen = Screen.Session;
+        await Saved();
     }
 
-    /// <summary>Review the verb forms that are due, across every tense (rounds of up to 10).</summary>
-    private void StartReview()
+    private async Task JustStart()
     {
-        var root = tree!;
-        if (dueRound is not { InProgress: true })
-            dueRound = new PracticeRound(root, book!, Progress, () => VerbPath.DueSession(root, Progress.VerbSkills, DateTime.UtcNow));
-        pathScreen = PathScreen.Review;
+        Progress.VerbsStarted = true;
+        await StartContinue();
     }
 
-    private void BrowseFromPath(VerbNode? node)
+    private async Task PractiseUnit(VerbUnit unit)
+    {
+        session = NewSession(SessionRound.Mode.Unit, unit);
+        Progress.VerbsStarted = true;
+        screen = Screen.Session;
+        await Saved();
+    }
+
+    private async Task CheckUnit(VerbUnit unit)
+    {
+        session = NewSession(SessionRound.Mode.Check, unit);
+        Progress.VerbsStarted = true;
+        screen = Screen.Session;
+        await Saved();
+    }
+
+    /// <summary>"Keep going" (or "Start learning" after the placement check): another session.</summary>
+    private async Task Again()
+    {
+        var last = session;
+        session = last is { Kind: SessionRound.Mode.Unit, Target: { } unit }
+            ? NewSession(SessionRound.Mode.Unit, unit)
+            : NewSession(SessionRound.Mode.Continue);
+        screen = Screen.Session;
+        await Saved();
+    }
+
+    /// <summary>Close the session (it's kept unless it's finished): back to the unit it was for, or home.</summary>
+    private void CloseSession()
+    {
+        var fromUnit = session is { Kind: SessionRound.Mode.Unit or SessionRound.Mode.Check } && openUnit is not null;
+        if (session is { Done: true }) session = null;
+        screen = fromUnit ? Screen.Unit : Screen.Home;
+    }
+
+    private void OpenUnit(VerbUnit unit)
+    {
+        openUnit = unit.Id;
+        screen = Screen.Unit;
+    }
+
+    private void GoHome()
+    {
+        mode = Mode.Home;
+        screen = Screen.Home;
+        openUnit = null;
+    }
+
+    private void OpenExplore()
     {
         mode = Mode.Tree;
-        Go(node ?? tree);
+        Go(tree);
     }
-
-    private Task RareInDecode() => FocusDecode(VerbGrammar.Tenses.Where(t => t.Stage == 4).Select(t => t.Id));
 
     private void OpenFromGrid(VerbNode node)
     {

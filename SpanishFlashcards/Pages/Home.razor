@@ -112,7 +112,7 @@ else
                                 ? "Reviews done"
                                 : $"{groupRequired} reviews left";
                             var learningText = learningN > 0 ? $" · {learningN} learning" : "";
-                            if (verbsDue > 0) learningText += $" · {verbsDue} verb {(verbsDue == 1 ? "form" : "forms")} due";
+                            if (verbsDue > 0) learningText += $" · {verbsDue} verb {(verbsDue == 1 ? "review" : "reviews")} due";
                             var bonusText = bonusN > 0 ? $" · {bonusN} bonus reviews" : "";
                             var checkN = words.Count(w => IsCheckIn(State(w)));
                             var checkText = checkN > 0 ? $" · {checkN} {(checkN == 1 ? "check-in" : "check-ins")}" : "";
@@ -121,20 +121,12 @@ else
                     </span>
                 </div>
 
-                @if (verbRound is not null && verbBook is not null)
+                @if (verbRound is not null && verbBook is not null && verbTree is not null)
                 {
-                    @* Verb forms due for review, after the words (Settings → Verbs). *@
+                    @* Verb reviews that are due, after the words (Settings → Verbs): making and reading, across tenses. *@
                     <div class="cards-verb-review">
-                    <div class="ls-head cards-verbs-head">
-                        <div class="ls-head-text">
-                            <div class="ls-kicker">Verbs</div>
-                            <h2 class="ls-title">Verb forms due</h2>
-                        </div>
-                        <button type="button" class="vb-resume-x" aria-label="Close the verb review" title="Close" @onclick="CloseVerbRound">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                        </button>
-                    </div>
-                    <VerbPractice @key="verbRound" R="verbRound" OnSaved="SaveProgress" OnClose="CloseVerbRound" CanSpeak="canSpeak" Speak="Speak" />
+                        <SessionView @key="verbRound" Round="verbRound" Kit="VerbKit.For(verbBook, verbTree)" Progress="progress"
+                                     OnSaved="SaveProgress" OnClose="CloseVerbRound" OnAgain="StartVerbRound" CanSpeak="canSpeak" Speak="Speak" />
                     </div>
                 }
                 else if (waitFor is not null && State(waitFor) is { DueAt: { } waitDue })
@@ -149,7 +141,7 @@ else
                     {
                         <section class="cards-verbs">
                             <div class="cards-verbs-text">
-                                <span class="cards-verbs-title">@($"While you wait: {verbsDue} verb {(verbsDue == 1 ? "form" : "forms")} due")</span>
+                                <span class="cards-verbs-title">@($"While you wait: {verbsDue} verb {(verbsDue == 1 ? "review" : "reviews")} due")</span>
                                 <span class="cards-verbs-sub">A quick verb review fits in nicely here.</span>
                             </div>
                             <div class="cards-verbs-actions">
@@ -395,8 +387,8 @@ else
                     {
                         <section class="cards-verbs">
                             <div class="cards-verbs-text">
-                                <span class="cards-verbs-title">@($"One more thing: {verbsDue} verb {(verbsDue == 1 ? "form" : "forms")} due")</span>
-                                <span class="cards-verbs-sub">Forms you've practised on the Verbs tab, back for a quick review. About a minute.</span>
+                                <span class="cards-verbs-title">@($"One more thing: {verbsDue} verb {(verbsDue == 1 ? "review" : "reviews")} due")</span>
+                                <span class="cards-verbs-sub">Verbs you've learned on the Verbs tab, back for a quick review: making them and reading them. A couple of minutes.</span>
                             </div>
                             <div class="cards-verbs-actions">
                                 <button type="button" class="primary" @onclick="StartVerbRound">Review verbs</button>
@@ -585,12 +577,36 @@ else
                             <input type="checkbox" @bind="progress.ShowVosotros" @bind:after="VosotrosChanged" />
                             <span>Include <em lang="es">vosotros</em></span>
                         </label>
-                        <p><em lang="es">Vosotros</em> (you all, informal) is used in Spain; Latin America says <em lang="es">ustedes</em> instead. Turn it off to hide it from the verb tables, practice, tests and scores. Your progress on it is kept.</p>
+                        <p><em lang="es">Vosotros</em> (you all, informal) is used in Spain; Latin America, Peru included, says <em lang="es">ustedes</em> instead. Off, it's left out of the verb tables, practice, tests and scores; the last unit still shows you its forms, just to recognise them. Your progress on it is kept.</p>
+                        <div class="timer-settings">
+                            <label for="verb-minutes">Session length</label>
+                            <select id="verb-minutes" class="small-select" @bind="progress.VerbSessionMinutes" @bind:after="SaveProgress">
+                                @foreach (var mins in new[] { 5, 10, 15, 20 })
+                                {
+                                    <option value="@mins">@($"{mins} minutes")</option>
+                                }
+                            </select>
+                            <label for="verb-spelling">Spelling forms</label>
+                            <select id="verb-spelling" class="small-select" @bind="progress.VerbSpelling" @bind:after="SaveProgress">
+                                <option value="tiles">Letter tiles</option>
+                                <option value="keyboard">The keyboard</option>
+                            </select>
+                            <label for="verb-time">Time limits</label>
+                            <select id="verb-time" class="small-select" @bind="progress.VerbTimeLimits" @bind:after="SaveProgress">
+                                @foreach (var limit in VerbSpeed.Settings)
+                                {
+                                    <option value="@limit.Id">@limit.Label</option>
+                                }
+                            </select>
+                        </div>
+                        <p><strong>Session length</strong>: how long Continue on the Verbs tab runs. A short session is mostly reviews and one step of your current unit; longer ones add new material and real sentences. You can always keep going.</p>
+                        <p><strong>Spelling forms</strong>: tiles or the keyboard to start with; every question has a link to switch on the spot. Tiles include decoy letters (accent twins and letters from look-alike forms), so they're still recall.</p>
+                        <p><strong>Time limits</strong>: a right answer within the limit counts as quick, and a unit becomes automatic once its answers are right and quick. Slower answers still count as right and come back sooner. Normal gives about 3.5 seconds to say what a form means, and a little longer to spell one; Relaxed allows half as long again, Tight a quarter less.</p>
                         <label class="check-row">
                             <input type="checkbox" @bind="progress.VerbsInCards" @bind:after="SaveProgress" />
                             <span>Verb reviews on the Cards tab</span>
                         </label>
-                        <p>Verb forms you've practised come back on the Cards tab when they're due, after your words, so you don't have to remember to review them.</p>
+                        <p>Verbs you've learned come back on the Cards tab when they're due, after your words, so you don't have to remember to review them.</p>
                     </section>
 
                     <section class="set-card">
@@ -684,13 +700,21 @@ else
                             <li>When you're done, <strong>Keep going</strong> gives you extra practice. It never pushes words further out, so it can't make a word look learned before it is.</li>
                             <li><strong>Mark learned</strong> in the Words list: the word never comes back.</li>
                             <li>Words you forget twice or more become <strong>tricky</strong> and show up more in games.</li>
-                            <li><strong>Verbs</strong>: conjugation by tense, with rules and practice for each group. Separate from the word cards.</li>
+                            <li><strong>Verbs</strong>: about 30 units in a useful order, each learned three ways (the rule, making the forms, reading them quickly). <strong>Continue</strong> picks what's next; a short check skips what you already know. Separate from the word cards.</li>
                         </ul>
                     </section>
 
                     <section class="set-card danger">
                         <h2>Start over</h2>
-                        <p>Deletes all your progress on this device. Export first if you might want it back.</p>
+                        <p><strong>Reset verb progress</strong> deletes only the Verbs tab's progress: units, verb reviews, practised forms, tests and Decode. Your words and your verb settings are kept.</p>
+                        <button type="button" class="reset-btn" @onclick="ResetVerbsTapped">
+                            @(confirmVerbReset ? "Tap again to delete verb progress" : "Reset verb progress")
+                        </button>
+                        @if (verbResetDone)
+                        {
+                            <p class="backup-msg" role="status">Verb progress deleted. The Verbs tab starts fresh.</p>
+                        }
+                        <p class="reset-next"><strong>Reset all progress</strong> deletes all your progress on this device, words and verbs. Export first if you might want it back.</p>
                         <button type="button" class="reset-btn" @onclick="ResetTapped">
                             @(confirmReset ? "Tap again to delete all progress" : "Reset all progress")
                         </button>
@@ -861,6 +885,8 @@ else
     private bool revealSlow;     // the answer was shown after the time limit (Settings → Answer timer)
     private int noticeVersion;
     private bool confirmReset;
+    private bool confirmVerbReset;
+    private bool verbResetDone;
     private bool canSpeak;
 
     // Multiple choice for the card on screen
@@ -904,7 +930,7 @@ else
 
     private VerbBook? verbBook;
     private VerbNode? verbTree;
-    private PracticeRound? verbRound;   // the verb review on screen (after the words)
+    private SessionRound? verbRound;    // the verb review on screen (after the words)
     private bool verbsLater;            // "Later" on the verb prompt, for this visit
 
     /// <summary>The verbs load in the background; Cards works without them.</summary>
@@ -913,20 +939,28 @@ else
         try
         {
             (verbBook, verbTree) = await VerbRepo.GetAsync();
+            if (!progress.VerbUnitsMigrated)
+            {
+                // Once: older verb progress moves into the Verbs tab's units.
+                VerbCourse.Migrate(VerbKit.For(verbBook, verbTree), progress);
+                await SaveProgress();
+            }
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception) { }
     }
 
-    /// <summary>Verb forms due for review (0 when they're not wanted on the Cards tab).</summary>
+    /// <summary>Verb reviews due (0 when they're not wanted on the Cards tab).</summary>
     private int VerbsDue =>
-        progress.VerbsInCards && verbTree is not null ? VerbPath.Due(verbTree, progress.VerbSkills, DateTime.UtcNow).Count : 0;
+        progress.VerbsInCards && verbBook is not null && verbTree is not null
+            ? VerbCourse.DueCount(VerbKit.For(verbBook, verbTree), progress, DateTime.UtcNow)
+            : 0;
 
+    /// <summary>A round of the verb reviews that are due (up to 12), mixing making and reading.</summary>
     private void StartVerbRound()
     {
         if (verbBook is null || verbTree is null) return;
-        var root = verbTree;
-        verbRound = new PracticeRound(root, verbBook, progress, () => VerbPath.DueSession(root, progress.VerbSkills, DateTime.UtcNow));
+        verbRound = new SessionRound(SessionRound.Mode.Reviews, VerbKit.For(verbBook, verbTree), progress, 5, canSpeak: canSpeak);
     }
 
     private void CloseVerbRound() => verbRound = null;
@@ -1415,6 +1449,8 @@ else
         timedCardKey = null; // coming back to Cards restarts the timer
         tab = t;
         confirmReset = false;
+        confirmVerbReset = false;
+        verbResetDone = false;
         if (t == Tab.Settings)
         {
             _ = LoadHistory();
@@ -1784,6 +1820,40 @@ else
         await Reset();
     }
 
+    private async Task ResetVerbsTapped()
+    {
+        verbResetDone = false;
+        if (!confirmVerbReset)
+        {
+            confirmVerbReset = true;
+            return;
+        }
+        confirmVerbReset = false;
+        ClearVerbProgress();
+        await Store.SaveAsync(progress);
+        verbResetDone = true;
+    }
+
+    /// <summary>
+    /// Deletes the Verbs tab's progress (and what's kept in memory for it). Verb settings stay: vosotros, session
+    /// length, spelling, time limits, verb reviews on the Cards tab.
+    /// </summary>
+    private void ClearVerbProgress()
+    {
+        progress.VerbSkills = new();
+        progress.VerbRotation = new();
+        progress.VerbTests = new();
+        progress.VerbLessons = new();
+        progress.VerbPlacementDone = false;
+        progress.VerbUnits = new();
+        progress.VerbMemory = new();
+        progress.VerbsStarted = false;
+        progress.VerbUnitsMigrated = true;
+        progress.DecodeTenses = null;
+        verbRound = null;
+        VerbsHub.Forget();
+    }
+
     private void AfterAnswer(Word card)
     {
         if (notice is not null) HideNoticeSoon();
@@ -2006,7 +2076,7 @@ else
         var log = await Store.ReadLogAsync();
         var scheduler = new ExportScheduler { Retention = progress.Retention, Parameters = progress.FsrsParameters };
         var json = ProgressTransfer.ToJson(words!, progress.Cards, progress.VerbSkills, progress.VerbTests, progress.Texts,
-                                           progress.MyWords, scheduler, log, progress.VerbLessons);
+                                           progress.MyWords, scheduler, log, progress.VerbLessons, progress.VerbUnits, progress.VerbMemory);
         await JS.InvokeVoidAsync("palabras.downloadText", $"palabras-progress-{DateTime.Now:yyyy-MM-dd}.json", "application/json", json);
         var verbForms = progress.VerbSkills.Values.Count(VerbSrs.IsSeen);
         ShowTransfer($"Exported {LearnedCount} learned and {words!.Count - LearnedCount} not-yet-learned words, and {verbForms} practised verb forms.");
@@ -2041,6 +2111,15 @@ else
                 progress.VerbSkills = result.VerbSkills;
                 progress.VerbTests = result.VerbTests ?? new();
                 progress.VerbLessons = ProgressTransfer.ReadLessons(text, e.File.Name) ?? new();
+                var (units, memory) = ProgressTransfer.ReadVerbUnits(text, e.File.Name);
+                progress.VerbUnits = units ?? new();
+                progress.VerbMemory = memory ?? new();
+                // A file from before the units: its verb progress moves into them, like on first use.
+                progress.VerbUnitsMigrated = units is not null;
+                if (units is not null) progress.VerbsStarted = true;
+                if (!progress.VerbUnitsMigrated && verbBook is not null && verbTree is not null)
+                    VerbCourse.Migrate(VerbKit.For(verbBook, verbTree), progress);
+                verbRound = null;
             }
             // The schedule settings and the review history (Export JSON from October 2026).
             var (scheduler, importedLog) = ProgressTransfer.ReadHistory(text, e.File.Name);
@@ -2088,11 +2167,7 @@ else
     {
         currentId = null;
         progress.Cards = new();
-        progress.VerbSkills = new();
-        progress.VerbRotation = new();
-        progress.VerbTests = new();
-        progress.VerbLessons = new();
-        progress.VerbPlacementDone = false;
+        ClearVerbProgress();
         progress.Order = null;
         progress.ReviewsDoneToday = 0;
         progress.NewDoneToday = 0;

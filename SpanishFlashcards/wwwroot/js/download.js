@@ -57,6 +57,24 @@ window.palabras = {
         return Math.max(0, now - t.start - hidden);
     },
 
+    // A second timer for verb sessions (the Cards tab's word timer runs separately).
+    _vtimer: { start: 0, hiddenMs: 0, hiddenSince: null },
+
+    verbTimerStart: function () {
+        const t = window.palabras._vtimer;
+        t.start = performance.now();
+        t.hiddenMs = 0;
+        t.hiddenSince = document.hidden ? performance.now() : null;
+    },
+
+    verbTimerElapsed: function () {
+        const t = window.palabras._vtimer;
+        if (!t.start) return 0;
+        const now = performance.now();
+        const hidden = t.hiddenMs + (t.hiddenSince !== null ? now - t.hiddenSince : 0);
+        return Math.max(0, now - t.start - hidden);
+    },
+
     focusById: function (id) {
         const el = document.getElementById(id);
         if (el) el.focus({ preventScroll: true });
@@ -88,13 +106,14 @@ if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = function () { window.speechSynthesis.getVoices(); };
 }
 
-// Pause the answer timer while the app is in the background.
+// Pause the answer timers while the app is in the background.
 document.addEventListener('visibilitychange', function () {
-    const t = window.palabras._timer;
-    if (document.hidden) {
-        if (t.hiddenSince === null) t.hiddenSince = performance.now();
-    } else if (t.hiddenSince !== null) {
-        t.hiddenMs += performance.now() - t.hiddenSince;
-        t.hiddenSince = null;
-    }
+    [window.palabras._timer, window.palabras._vtimer].forEach(function (t) {
+        if (document.hidden) {
+            if (t.hiddenSince === null) t.hiddenSince = performance.now();
+        } else if (t.hiddenSince !== null) {
+            t.hiddenMs += performance.now() - t.hiddenSince;
+            t.hiddenSince = null;
+        }
+    });
 });

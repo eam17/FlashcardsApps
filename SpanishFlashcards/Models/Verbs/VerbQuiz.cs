@@ -221,8 +221,9 @@ public static class VerbQuiz
     /// Letter tiles for spelling the answer: every letter of it (and a space tile per space), plus a few
     /// trap letters: the accent twin of a vowel (ó for hablo, o for habló), letters from the near-miss
     /// forms (the e and n of "tení" when the answer is tuve), then a common letter. Shuffled.
+    /// <paramref name="extra"/> adds that many more decoys (harder questions).
     /// </summary>
-    public static List<string> LetterTiles(VerbQuestion q, VerbBook book)
+    public static List<string> LetterTiles(VerbQuestion q, VerbBook book, int extra = 0)
     {
         var answer = q.Answer;
         var tiles = answer.Select(c => c.ToString()).ToList();
@@ -236,7 +237,7 @@ public static class VerbQuiz
                 for (var n = have.GetValueOrDefault(g.Key) + forAlternatives.Count(x => x == g.Key.ToString()); n < g.Count(); n++)
                     forAlternatives.Add(g.Key.ToString());
 
-        var want = (letters.Length <= 5 ? 3 : 4) + forAlternatives.Count;
+        var want = (letters.Length <= 5 ? 3 : 4) + extra + forAlternatives.Count;
         var extras = new List<string>(forAlternatives);
 
         void Add(string ch)

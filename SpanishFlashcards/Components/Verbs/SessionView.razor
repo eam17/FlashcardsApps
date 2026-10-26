@@ -1,0 +1,672 @@
+@* A verb session (SessionRound): the idea of a unit, its check, and every kind of question (build, spell from a
+   cue, fill a gap, English to Spanish, decode, meaning, in a sentence, by ear), then a summary. All state lives
+   in the round, so this screen can close and reopen without losing anything. *@
+@inject IJSRuntime JS
+
+<div class="vs">
+    <div class="ls-head">
+        <div class="ls-head-text">
+            <div class="ls-kicker">@Kicker()</div>
+            <h2 class="ls-title">@HeadTitle()</h2>
+        </div>
+        @if (Round.Kind == SessionRound.Mode.Placement && !Round.Done)
+        {
+            <button type="button" class="tool small" @onclick="StopHere">Stop here</button>
+        }
+        <button type="button" class="vb-resume-x" aria-label="Close (your place is kept)" title="Close (your place is kept)" @onclick="() => OnClose.InvokeAsync()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
+    </div>
+
+    @if (!Round.Done)
+    {
+        <div class="vp-progress" aria-label="@($"Question {Round.PositionText}")">
+            <div class="vp-progress-fill" style="width: @ProgressPercent%"></div>
+        </div>
+    }
+
+    @if (Round.Current.Kind == SessionRound.StepKind.Idea && Round.Current.Unit is { } ideaUnit)
+    {
+        <section class="ls-card">
+            <CascadingValue Value="Kit.Book" IsFixed="true">
+                <div class="vr">
+                    <RuleBlocksView Blocks="VerbUnits.Idea(ideaUnit, Kit.Book)" />
+                </div>
+            </CascadingValue>
+            <button id="vs-next" type="button" class="primary wide" @onclick="ContinueStep">Got it</button>
+            <button type="button" class="skip-link" @onclick="KnowThis">I know this: check me</button>
+        </section>
+    }
+    else if (Round.Current.Kind == SessionRound.StepKind.CheckIntro && Round.Current.Unit is { } checkUnit)
+    {
+        <section class="ls-card ls-center">
+            <div class="vs-big">@checkUnit.Title</div>
+            <p>A quick check first: a few questions on this unit. Get them all right and you skip it; get some right and you only practise what you missed.</p>
+            <p class="list-hint">No guessing: <em>I don't know</em> is a fine answer.</p>
+            <button id="vs-next" type="button" class="primary wide" @onclick="ContinueStep">Start the check</button>
+        </section>
+    }
+    else if (Round.Current.Kind == SessionRound.StepKind.UnitDone && Round.Current.Unit is { } doneUnit)
+    {
+        var nextUnit = VerbCourse.Current(Kit, Progress);
+        <section class="ls-card ls-center">
+            <div class="done-title">@(Round.Current.Known ? "¡Ya lo sabes!" : "¡Bien hecho!")</div>
+            <p><strong>@doneUnit.Title</strong> @(Round.Current.Known ? "is skipped: you already know it. A review in a few days makes sure." : "is solid. It comes back in reviews until it's quick too.")</p>
+            <UnitMeters Unit="doneUnit" State="VerbCourse.State(Kit, Progress, doneUnit)" />
+            @if (Round.Kind == SessionRound.Mode.Continue && nextUnit is not null && nextUnit != doneUnit)
+            {
+                <p class="ls-next-up">@($"Next: {nextUnit.Title}")</p>
+            }
+            <button id="vs-next" type="button" class="primary wide" @onclick="ContinueStep">Continue</button>
+        </section>
+    }
+    else if (Round.Current.Kind == SessionRound.StepKind.Question && Round.Question is { } q)
+    {
+        @if (!Round.Answered && q.Purpose == Purpose.Quick && !double.IsInfinity(Round.LimitSeconds(q, UseTiles)))
+        {
+            <div class="vs-timer" aria-hidden="true"><span style="animation-duration: @Seconds(Round.LimitSeconds(q, UseTiles))s"></span></div>
+        }
+
+        @if (q.Kind is AskKind.Build or AskKind.Cue)
+        {
+            @CueCard(q)
+        }
+        else if (q.Kind == AskKind.Context)
+        {
+            @SentenceCard(q, true)
+        }
+        else if (q.Kind == AskKind.Sentence)
+        {
+            @SentenceCard(q, false)
+        }
+        else if (q.Kind == AskKind.English)
+        {
+            @EnglishCard(q)
+        }
+        else if (q.Kind == AskKind.Decode)
+        {
+            @DecodeCard(q)
+        }
+        else
+        {
+            @FormCard(q)
+        }
+
+        @if (!Round.Answered)
+        {
+            @if (q.Kind == AskKind.Build && q.Build is { } chunks)
+            {
+                <div class="vs-build">
+                    <div class="dc-q-title">Stem</div>
+                    <div class="choices" role="group" aria-label="Stem">
+                        @foreach (var s in chunks.Stems)
+                        {
+                            var stem = s;
+                            <button type="button" class="choice es @(Round.BuildStem == stem ? "on" : "")" lang="es" @onclick="() => PickStem(stem)">@($"{stem}-")</button>
+                        }
+                    </div>
+                    <div class="dc-q-title">Ending</div>
+                    <div class="choices" role="group" aria-label="Ending">
+                        @foreach (var e in chunks.Endings)
+                        {
+                            var ending = e;
+                            <button type="button" class="choice es @(Round.BuildEnding == ending ? "on" : "")" lang="es" @onclick="() => PickEnding(ending)">@($"-{ending}")</button>
+                        }
+                    </div>
+                </div>
+            }
+            else if (q.Kind is AskKind.Cue or AskKind.Context or AskKind.English)
+            {
+                <SpellInput Tiles="TilesFor(q)" UseTiles="UseTiles" UseTilesChanged="SetTiles" QuestionId="q.Id" OnAnswer="Spelled" />
+            }
+            else if (q.Kind == AskKind.Decode)
+            {
+                <button type="button" class="primary wide" disabled="@(!Round.DecodeReady)" @onclick="CheckDecode">Check</button>
+            }
+            else if (q.Meaning is { } choices)
+            {
+                <div class="choices vs-choices" role="group" aria-label="Meanings">
+                    @foreach (var o in choices.Options)
+                    {
+                        var option = o;
+                        <button type="button" class="choice" @onclick="() => Choose(option)">@option</button>
+                    }
+                </div>
+            }
+            <button type="button" class="skip-link" @onclick="DontKnow">I don't know</button>
+        }
+        else
+        {
+            @if (q.Kind is AskKind.Cue or AskKind.Context or AskKind.English && !string.IsNullOrEmpty(Round.Given))
+            {
+                <div class="vp-built @GradeClass" lang="es"><span class="vp-built-text">@Round.Given</span></div>
+            }
+            @if (q.Kind == AskKind.Build)
+            {
+                <div class="vp-built @GradeClass" lang="es"><span class="vp-built-text">@($"{Round.BuildStem}{Round.BuildEnding}")</span></div>
+            }
+            @if (q.Meaning is { } m && q.Kind is AskKind.Meaning or AskKind.Sentence or AskKind.Listen)
+            {
+                <div class="choices vs-choices" role="group" aria-label="Meanings">
+                    @foreach (var o in m.Options)
+                    {
+                        <div class="choice @(m.AllRight.Contains(o) ? "right" : o == Round.Picked ? "wrong" : "dim")">@o</div>
+                    }
+                </div>
+            }
+
+            <div class="game-feedback @FeedbackClass" role="status">
+                <span class="fb-icon" aria-hidden="true">@(Round.Grade == Grade.Right ? "✓" : Round.Grade == Grade.AccentSlip ? "~" : "✗")</span>
+                <span>@FeedbackText(q)</span>
+            </div>
+
+            @if (q.Kind == AskKind.Decode && Round.Clues.Count > 0)
+            {
+                <ul class="dc-clues">
+                    @foreach (var clue in Round.Clues)
+                    {
+                        <li>@RuleText.Render(clue)</li>
+                    }
+                </ul>
+            }
+            @if (Round.Why.Count > 0)
+            {
+                <div class="vp-why" role="note">
+                    <div class="vp-why-label">Why</div>
+                    @foreach (var line in Round.Why)
+                    {
+                        <p>@RuleText.Render(line)</p>
+                    }
+                </div>
+            }
+            @if (Round.Grade != Grade.Right && q.Meter == Meter.Make && q.Unit?.Kind != UnitKind.Phrases)
+            {
+                <ConjugationTable Verb="q.Verb" Tense="@q.Tense" Focus="q.Person" />
+            }
+
+            <div class="vp-next">
+                @if (CanSpeak && Speak is not null)
+                {
+                    <button type="button" class="speak-btn" aria-label="Say it" title="Say it" @onclick="() => Say(q)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></svg>
+                    </button>
+                }
+                <button id="vs-next" type="button" class="primary wide" @onclick="ContinueStep">Continue</button>
+            </div>
+        }
+    }
+    else
+    {
+        var changes = Round.Changes();
+        var next = VerbCourse.Current(Kit, Progress);
+        <section class="ls-card ls-center vs-end">
+            <div class="done-title">@EndTitle()</div>
+            @if (Round.AnsweredCount > 0)
+            {
+                <p>@($"{Round.RightCount} of {Round.AnsweredCount} right.")</p>
+            }
+            @if (Round.Kind == SessionRound.Mode.Placement)
+            {
+                <p>@($"Checked {Round.PlacementChecked} {(Round.PlacementChecked == 1 ? "unit" : "units")}: {Round.PlacementKnown} you already know. They come back once in a review to make sure.")</p>
+            }
+            @if (Round.Kind == SessionRound.Mode.Check && Round.Target is { } target)
+            {
+                @if (VerbCourse.State(Kit, Progress, target).Solid)
+                {
+                    <p>You already know this one. A review in a few days makes sure.</p>
+                }
+                else
+                {
+                    <p>Not all there yet: practising it covers what you missed.</p>
+                    <button type="button" class="primary" @onclick="() => OnPractiseUnit.InvokeAsync(target)">Practise this unit</button>
+                }
+            }
+            @if (changes.Count > 0)
+            {
+                <div class="vs-moved">
+                    <div class="vs-moved-title">What moved</div>
+                    @foreach (var change in changes.Take(6))
+                    {
+                        <div class="vs-moved-row">
+                            <span class="vs-moved-name">
+                                @change.Unit.Title
+                                <span class="badge @(change.After.Solid ? "known" : "learning")">@UnitProgress.StatusLabel(change.After.Status)</span>
+                            </span>
+                            <UnitMeters Unit="change.Unit" State="change.After" />
+                        </div>
+                    }
+                </div>
+            }
+            @if (next is not null && Round.Kind is SessionRound.Mode.Continue or SessionRound.Mode.Placement)
+            {
+                <p class="ls-next-up">@($"Next: {next.Title}")</p>
+            }
+            <div class="vp-done-actions">
+                @if (Round.Kind is SessionRound.Mode.Continue or SessionRound.Mode.Unit or SessionRound.Mode.Placement)
+                {
+                    <button type="button" class="primary" @onclick="() => OnAgain.InvokeAsync()">@(Round.Kind == SessionRound.Mode.Placement ? "Start learning" : "Keep going")</button>
+                }
+                <button type="button" class="tool" @onclick="() => OnClose.InvokeAsync()">Done</button>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SessionRound Round { get; set; } = default!;
+    [Parameter, EditorRequired] public VerbKit Kit { get; set; } = default!;
+    [Parameter, EditorRequired] public Progress Progress { get; set; } = default!;
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Another session of the same kind ("Keep going", or "Start learning" after the placement check).</summary>
+    [Parameter] public EventCallback OnAgain { get; set; }
+
+    /// <summary>From a check that wasn't passed: practise that unit.</summary>
+    [Parameter] public EventCallback<VerbUnit> OnPractiseUnit { get; set; }
+
+    [Parameter] public bool CanSpeak { get; set; }
+    [Parameter] public Func<string, Task>? Speak { get; set; }
+
+    // Keyboard or tiles: the setting, until you switch on a question (then kept while the app is open).
+    private static bool? tilesChoice;
+    private bool UseTiles => tilesChoice ?? Progress.VerbSpelling != "keyboard";
+
+    private int timedFor = -1;
+    private bool focusNext;
+
+    private int ProgressPercent => Round.AnsweredCount * 100 / Math.Max(1, Math.Max(Round.Planned, Round.AnsweredCount + 1));
+
+    private static string Seconds(double s) => s.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
+    // ------------------------------------------------------------------ headings
+
+    private string Kicker()
+    {
+        if (Round.Kind == SessionRound.Mode.Placement) return "Placement check";
+        var step = Round.Current;
+        if (step.Kind == SessionRound.StepKind.End) return "Verbs";
+        return step.Question?.Purpose switch
+        {
+            Purpose.Review => "Review",
+            Purpose.Real => "Real Spanish",
+            Purpose.Quick => "Quick",
+            Purpose.Retry => "Once more",
+            Purpose.Check => "Check",
+            Purpose.Predict => "Try the rule",
+            _ => step.Unit?.Kicker ?? "Verbs",
+        };
+    }
+
+    private string HeadTitle()
+    {
+        var step = Round.Current;
+        if (step.Kind == SessionRound.StepKind.End)
+        {
+            return Round.Kind switch
+            {
+                SessionRound.Mode.Placement => "Placement done",
+                SessionRound.Mode.Check => "Check done",
+                _ => "Session done",
+            };
+        }
+        return step.Unit?.Title ?? (Round.Kind == SessionRound.Mode.Reviews ? "Verb reviews" : "Verbs");
+    }
+
+    // ------------------------------------------------------------------ question cards
+
+    private RenderFragment CueCard(SessionQuestion q) => @<div class="vp-card">
+        <div class="vp-tense">@VerbGrammar.TenseById[q.Tense].Name</div>
+        <div class="vp-verb"><span lang="es">@q.Verb.Inf</span> <span class="vp-en">@q.Verb.En</span></div>
+        <div class="vp-person">@q.PersonLabel</div>
+        <div class="vp-blank" lang="es">
+            @if (q.Negative)
+            {
+                <span>no </span>
+            }
+            @if (Round.Answered)
+            {
+                <span class="vp-answer"><FormParts Verb="q.Verb" Tense="@q.Tense" Person="q.Person" Form="@q.Form" /></span>
+            }
+            else
+            {
+                <span class="vp-line">_____</span>
+            }
+        </div>
+        @if (!Round.Answered)
+        {
+            <div class="vp-hint">@CueHint(q)</div>
+        }
+    </div>;
+
+    private static string CueHint(SessionQuestion q)
+    {
+        var how = q.Kind == AskKind.Build ? "Pick the stem, then the ending" : "Spell the form";
+        if (q.Verb.Reflexive) how += ", with its pronoun (me, te, se…)";
+        if (q.Unseen) how += ". A verb you haven't met in this unit: try the rule on it";
+        return how + ".";
+    }
+
+    private RenderFragment SentenceCard(SessionQuestion q, bool gap) => @<div class="vp-card vs-card">
+        <div class="vp-tense">@(gap ? "Fill the gap" : q.WholeSentence ? "What does it mean?" : "In a sentence")</div>
+        <p class="vs-line" lang="es">
+            @Clued(q.Before ?? "", q.Clue)
+            @if (gap && Round.Answered)
+            {
+                <span class="vs-target done">@VerbSentences.Shown(q.Form, q.AtStart)</span>
+            }
+            else if (gap)
+            {
+                <span class="vs-gap">_____</span>
+            }
+            else
+            {
+                <span class="vs-target">@q.Form</span>
+            }
+            @Clued(q.After ?? "", q.Clue)
+        </p>
+        @if (gap && q.Hint is not null)
+        {
+            <div class="vs-hint" lang="es">@($"({q.Hint})")</div>
+        }
+        @if (q.English is not null && (gap || Round.Answered) && !q.WholeSentence)
+        {
+            <div class="st-en">@q.English</div>
+        }
+        @if (q.Source is not null)
+        {
+            <div class="vs-source">@q.Source</div>
+        }
+        @if (!gap && !Round.Answered)
+        {
+            <div class="vp-hint">@RuleText.Render(q.WholeSentence ? "Pick what the sentence means." : $"What does *{q.Form}* mean here?")</div>
+        }
+    </div>;
+
+    /// <summary>A piece of a sentence with its clue words marked.</summary>
+    private static RenderFragment Clued(string text, string? clue) => builder =>
+    {
+        if (string.IsNullOrEmpty(clue) || text.Length == 0)
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+        var seq = 1;
+        foreach (var (part, isClue) in VerbClues.Highlight(text, clue))
+        {
+            if (isClue)
+            {
+                builder.OpenElement(seq++, "mark");
+                builder.AddAttribute(seq++, "class", "vs-clue");
+                builder.AddContent(seq++, part);
+                builder.CloseElement();
+            }
+            else builder.AddContent(seq++, part);
+        }
+    };
+
+    private RenderFragment EnglishCard(SessionQuestion q) => @<div class="vp-card vs-card">
+        <div class="vp-tense">In Spanish</div>
+        @if (q.Before is not null)
+        {
+            <div class="vs-english">@q.English</div>
+            <p class="vs-line" lang="es">
+                @q.Before
+                @if (Round.Answered)
+                {
+                    <span class="vs-target done">@VerbSentences.Shown(q.Form, q.AtStart)</span>
+                }
+                else
+                {
+                    <span class="vs-gap">_____</span>
+                }
+                @q.After
+            </p>
+        }
+        else
+        {
+            <div class="vs-english big">@q.English</div>
+            <div class="vs-hint" lang="es">@($"({q.Hint})")</div>
+            @if (Round.Answered)
+            {
+                <div class="vp-blank" lang="es"><span class="vp-answer"><FormParts Verb="q.Verb" Tense="@q.Tense" Person="q.Person" Form="@q.Form" /></span></div>
+            }
+        }
+    </div>;
+
+    private RenderFragment FormCard(SessionQuestion q) => @<div class="vp-card dc-card">
+        <div class="vp-tense">@(q.Kind == AskKind.Listen ? "Listen" : "What does it mean?")</div>
+        @if (q.Kind == AskKind.Listen && !Round.Answered)
+        {
+            <button type="button" class="dc-play" @onclick="() => Say(q)">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+                Play again
+            </button>
+        }
+        else if (Round.Answered)
+        {
+            <div class="dc-form" lang="es"><FormParts Verb="q.Verb" Tense="@q.Tense" Person="q.Person" Form="@q.Shown" /></div>
+        }
+        else
+        {
+            <div class="dc-form" lang="es">@q.Shown</div>
+        }
+    </div>;
+
+    private RenderFragment DecodeCard(SessionQuestion q) => @<div class="vs-decode">
+        <div class="vp-card dc-card">
+            <div class="vp-tense">@(q.Unseen ? "Decode · a verb you haven't met here" : "Decode")</div>
+            @if (Round.Answered)
+            {
+                <div class="dc-form" lang="es"><FormParts Verb="q.Verb" Tense="@q.Tense" Person="q.Person" Form="@q.Decode!.Display" /></div>
+            }
+            else
+            {
+                <div class="dc-form" lang="es">@q.Decode!.Display</div>
+            }
+        </div>
+        <div class="dc-q">
+            <div class="dc-q-title">Which verb?</div>
+            <div class="dc-options">
+                @foreach (var v in q.VerbChoices)
+                {
+                    var inf = v.Inf;
+                    <button type="button" class="dc-opt @OptClass(Round.DecodeVerb == inf, q.Decode!.Readings.Any(r => r.Inf == inf))" disabled="@Round.Answered"
+                            lang="es" @onclick="() => PickVerb(inf)">@inf <span class="dc-opt-en" lang="en">@v.En</span></button>
+                }
+            </div>
+            <div class="dc-q-title">Who?</div>
+            <div class="dc-options">
+                @foreach (var who in VerbDecode.WhoOptions.Where(o => VerbSettings.Vosotros || q.AllPersons || o.Group != "vos"))
+                {
+                    var g = who.Group;
+                    <button type="button" class="dc-opt @OptClass(Round.DecodeWho == g, q.Decode!.Readings.Any(r => r.Group == g))" disabled="@Round.Answered"
+                            @onclick="() => PickWho(g)">@who.Label</button>
+                }
+            </div>
+            <div class="dc-q-title">When?</div>
+            <div class="dc-options">
+                @foreach (var t in q.WhenChoices)
+                {
+                    var tt = t;
+                    <button type="button" class="dc-opt @OptClass(Round.DecodeWhen == tt, q.Decode!.Readings.Any(r => r.Tense == tt))" disabled="@Round.Answered"
+                            @onclick="() => PickWhen(tt)">@VerbDecode.TenseLabel(tt)</button>
+                }
+            </div>
+        </div>
+    </div>;
+
+    private string OptClass(bool chosen, bool correct) =>
+        !Round.Answered ? (chosen ? "on" : "") : correct ? "right" : chosen ? "wrong" : "dim";
+
+    // ------------------------------------------------------------------ feedback
+
+    private string FeedbackClass => Round.Grade switch { Grade.Right => "ok", Grade.AccentSlip => "meh", _ => "no" };
+    private string GradeClass => Round.Grade switch { Grade.Right => "right", Grade.AccentSlip => "almost", _ => "wrong" };
+
+    private MarkupString FeedbackText(SessionQuestion q)
+    {
+        var slow = Round.Grade == Grade.Right && !Round.Fast && !double.IsInfinity(Round.LimitSeconds(q, Round.UsedTiles));
+        var speed = slow ? $" A bit slow ({Seconds(Round.Ms / 1000)} s): it comes back to get quicker." : "";
+        string text;
+        if (q.Kind == AskKind.Decode && q.Decode is { } d)
+        {
+            var head = Round.Grade == Grade.Right ? "**Right.**" : Round.Grade == Grade.AccentSlip ? "**Half right.**" : "**Not quite.**";
+            text = $"{head} *{d.Display}* = {Reading(d)}.";
+        }
+        else if (q.Meaning is { } m && q.Kind is AskKind.Meaning or AskKind.Sentence or AskKind.Listen)
+        {
+            if (q.WholeSentence)
+                text = Round.Grade == Grade.Right ? "**Right.**" : $"**Not quite.** It means: {m.Right}";
+            else
+                text = $"{(Round.Grade == Grade.Right ? "**Right.**" : "**Not quite.**")} *{q.Shown}* = {m.Right}.";
+        }
+        else if (Round.Grade == Grade.Right)
+        {
+            text = "**Right.**";
+            if (Round.Matched is { } matched && !string.Equals(matched, q.Form, StringComparison.OrdinalIgnoreCase))
+                text += $" *{matched}* is also correct.";
+        }
+        else if (Round.Grade == Grade.AccentSlip)
+        {
+            text = $"**Almost:** check the accent, *{Round.Matched}*. Counts as half a mistake.";
+        }
+        else
+        {
+            var form = q.Kind == AskKind.Context || (q.Kind == AskKind.English && q.Before is not null)
+                ? VerbSentences.Shown(q.Form, q.AtStart)
+                : q.Form;
+            text = $"**Not quite.** It's *{(q.Negative ? "no " : "")}{form}*.";
+        }
+        return RuleText.Render(text + speed);
+    }
+
+    /// <summary>"tener · Preterite · yo", or several readings joined with "or".</summary>
+    private static string Reading(DecodeItem item) => string.Join(" or ",
+        item.Readings
+            .GroupBy(r => (r.Inf, r.Tense))
+            .Select(g => $"{g.Key.Inf} · {VerbGrammar.TenseById[g.Key.Tense].Name} · {string.Join(" / ", g.Select(r => WhoShort(r.Group)).Distinct())}"));
+
+    private static string WhoShort(string group) => group switch
+    {
+        "yo" => "yo", "tu" => "tú", "el" => "él / usted", "nos" => "nosotros", "vos" => "vosotros", _ => "ellos / ustedes",
+    };
+
+    private string EndTitle()
+    {
+        if (Round.AnsweredCount == 0) return Round.Kind == SessionRound.Mode.Reviews ? "Nothing due" : "All caught up";
+        var share = (double)Round.RightCount / Round.AnsweredCount;
+        return share >= 0.95 ? "¡Perfecto!" : share >= 0.6 ? "¡Bien hecho!" : "Sigue así";
+    }
+
+    // ------------------------------------------------------------------ actions
+
+    private TileState TilesFor(SessionQuestion q)
+    {
+        if (q.Tiles is null)
+        {
+            var vq = new VerbQuestion(new FormRef(q.Verb.Inf, q.Tense, q.Person), q.Verb, q.Answers, true, Array.Empty<string>());
+            q.Tiles = new TileState(VerbQuiz.LetterTiles(vq, Kit.Book, q.ExtraDecoys));
+        }
+        return q.Tiles;
+    }
+
+    private void SetTiles(bool tiles) => tilesChoice = tiles;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Round.Question is { } q && !Round.Answered && timedFor != q.Id)
+        {
+            timedFor = q.Id;
+            try { await JS.InvokeVoidAsync("palabras.verbTimerStart"); }
+            catch (Exception) { }
+            if (q.Kind == AskKind.Listen) await Say(q);
+        }
+        if (focusNext)
+        {
+            focusNext = false;
+            try { await JS.InvokeVoidAsync("palabras.focusById", "vs-next"); }
+            catch (Exception) { }
+        }
+    }
+
+    /// <summary>How long the question on screen took, in milliseconds (time away from the app doesn't count).</summary>
+    private async Task<double> Elapsed()
+    {
+        try { return await JS.InvokeAsync<double>("palabras.verbTimerElapsed"); }
+        catch (Exception) { return 0; }
+    }
+
+    private async Task AfterAnswer()
+    {
+        focusNext = true;
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task Spelled((string Text, bool Tiles) a)
+    {
+        var ms = await Elapsed();
+        if (Round.AnswerSpelled(a.Text, a.Tiles, ms)) await AfterAnswer();
+    }
+
+    private async Task PickStem(string stem)
+    {
+        Round.BuildStem = stem;
+        await TryBuild();
+    }
+
+    private async Task PickEnding(string ending)
+    {
+        Round.BuildEnding = ending;
+        await TryBuild();
+    }
+
+    private async Task TryBuild()
+    {
+        if (Round.BuildStem is null || Round.BuildEnding is null) return;
+        var ms = await Elapsed();
+        if (Round.AnswerBuild(ms)) await AfterAnswer();
+    }
+
+    private void PickVerb(string inf) => Round.DecodeVerb = inf;
+    private void PickWho(string group) => Round.DecodeWho = group;
+    private void PickWhen(string tense) => Round.DecodeWhen = tense;
+
+    private async Task CheckDecode()
+    {
+        var ms = await Elapsed();
+        if (Round.AnswerDecode(ms)) await AfterAnswer();
+    }
+
+    private async Task Choose(string option)
+    {
+        var ms = await Elapsed();
+        if (Round.AnswerChoice(option, ms)) await AfterAnswer();
+    }
+
+    private async Task DontKnow()
+    {
+        var ms = await Elapsed();
+        if (Round.DontKnow(ms)) await AfterAnswer();
+    }
+
+    private async Task ContinueStep()
+    {
+        Round.Continue();
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task KnowThis()
+    {
+        Round.KnowThis();
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task StopHere()
+    {
+        Round.Stop();
+        await OnSaved.InvokeAsync();
+    }
+
+    private Task Say(SessionQuestion q) => Speak is null ? Task.CompletedTask : Speak(q.Shown);
+}

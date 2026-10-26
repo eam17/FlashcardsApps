@@ -35,8 +35,14 @@ public sealed class ProgressExport
     /// <summary>Words you added from texts (cards outside the word list). Their progress is in Schedule.</summary>
     public List<MyWord>? MyWords { get; set; }
 
-    /// <summary>Verbs tab, Path: lessons passed or placed (missing before October 2026).</summary>
+    /// <summary>Verbs tab, old path: lessons passed or placed (missing before October 2026).</summary>
     public Dictionary<string, LessonRecord>? VerbLessons { get; set; }
+
+    /// <summary>Verbs tab: what you've shown in each unit (missing before the units, late October 2026).</summary>
+    public Dictionary<string, UnitRecord>? VerbUnits { get; set; }
+
+    /// <summary>Verbs tab: review memory per review item (missing before the units).</summary>
+    public Dictionary<string, VerbMem>? VerbMemory { get; set; }
 
     /// <summary>Your target retention and schedule parameters (missing before October 2026).</summary>
     public ExportScheduler? Scheduler { get; set; }
@@ -130,10 +136,14 @@ public static class ProgressTransfer
                                 IReadOnlyDictionary<string, VerbTestRecord>? verbTests = null,
                                 List<SavedText>? texts = null, List<MyWord>? myWords = null,
                                 ExportScheduler? scheduler = null, List<ReviewEntry>? history = null,
-                                IReadOnlyDictionary<string, LessonRecord>? verbLessons = null)
+                                IReadOnlyDictionary<string, LessonRecord>? verbLessons = null,
+                                IReadOnlyDictionary<string, UnitRecord>? verbUnits = null,
+                                IReadOnlyDictionary<string, VerbMem>? verbMemory = null)
     {
         var export = new ProgressExport { Schedule = new(), Scheduler = scheduler };
         if (verbLessons is { Count: > 0 }) export.VerbLessons = verbLessons.ToDictionary(kv => kv.Key, kv => kv.Value);
+        if (verbUnits is { Count: > 0 }) export.VerbUnits = verbUnits.ToDictionary(kv => kv.Key, kv => kv.Value);
+        if (verbMemory is { Count: > 0 }) export.VerbMemory = verbMemory.ToDictionary(kv => kv.Key, kv => kv.Value);
         if (history is { Count: > 0 }) export.History = history.OrderBy(e => e.T).ToList();
         if (texts is { Count: > 0 }) export.Texts = texts;
         if (myWords is { Count: > 0 }) export.MyWords = myWords;
@@ -288,6 +298,23 @@ public static class ProgressTransfer
         if (!looksJson) return null;
         try { return JsonSerializer.Deserialize<ProgressExport>(text, JsonOptions)?.VerbLessons; }
         catch (JsonException) { return null; }
+    }
+
+    /// <summary>From an Export JSON file: the verb units and their review memory (nulls when missing or a CSV).</summary>
+    public static (Dictionary<string, UnitRecord>? Units, Dictionary<string, VerbMem>? Memory) ReadVerbUnits(string text, string fileName)
+    {
+        text = text.TrimStart('\uFEFF').Trim();
+        var looksJson = text.StartsWith('{') || fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+        if (!looksJson) return (null, null);
+        try
+        {
+            var data = JsonSerializer.Deserialize<ProgressExport>(text, JsonOptions);
+            return (data?.VerbUnits, data?.VerbMemory);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
     }
 
     /// <summary>From an Export JSON file: the schedule settings and the review history (null when missing or a CSV).</summary>

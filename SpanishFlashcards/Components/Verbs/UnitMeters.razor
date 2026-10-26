@@ -1,0 +1,39 @@
+@* A unit's three meters: Rule (understanding it), Make (making the forms), Read (recognising them).
+   Make says "later" for a unit you read first, and isn't shown for a unit you only read. *@
+
+<span class="um" role="img" aria-label="@Label">
+    <span class="um-m">
+        <span class="um-l">Rule</span>
+        <span class="um-bar"><span style="width: @Pct(State.Rule, UnitState.RuleMax)%"></span></span>
+    </span>
+    @if (Unit.Goal != UnitGoal.ReadOnly)
+    {
+        <span class="um-m @(State.MakeRequired ? "" : "later")">
+            <span class="um-l">@(State.MakeRequired ? "Make" : "Make: later")</span>
+            <span class="um-bar"><span style="width: @(State.MakeRequired ? Pct(State.Make, UnitState.MeterMax) : 0)%"></span></span>
+        </span>
+    }
+    <span class="um-m">
+        <span class="um-l">Read</span>
+        <span class="um-bar"><span style="width: @Pct(State.Read, UnitState.MeterMax)%"></span></span>
+    </span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public VerbUnit Unit { get; set; } = default!;
+    [Parameter, EditorRequired] public UnitState State { get; set; } = default!;
+
+    private static int Pct(int step, int max) => (int)Math.Round(100.0 * Math.Clamp(step, 0, max) / max);
+
+    private string Label
+    {
+        get
+        {
+            var parts = new List<string> { $"Rule {State.Rule} of {UnitState.RuleMax}" };
+            if (Unit.Goal != UnitGoal.ReadOnly)
+                parts.Add(State.MakeRequired ? $"Make {State.Make} of {UnitState.MeterMax}" : "Make later");
+            parts.Add($"Read {State.Read} of {UnitState.MeterMax}");
+            return string.Join(", ", parts);
+        }
+    }
+}
